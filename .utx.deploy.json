@@ -1,0 +1,725 @@
+{
+    "targets": [
+        {
+            "chain": "AZ28MNK9eOSwFh-KQtLiCg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "834c5e7fbfd688e934134945252287ca",
+            "path": "main.cpp"
+        },
+        {
+            "chain": "AZ28OpNtdwKZ9Re9aZRqNA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "3e5657d6700c13a64500bbde9b5355aa",
+            "path": "domain/Types.cpp"
+        },
+        {
+            "chain": "AZ28OpNud2qFdwi3liqL1Q",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "e5c6aee03203162f7bf444c42da192ac",
+            "path": "domain/Types.hpp"
+        },
+        {
+            "chain": "AZ28OpNucvWrJczdyHnW5A",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "6ad0b5c6a9539f7ab91d3a3c9042a71b",
+            "path": "domain/model/Types.hpp"
+        },
+        {
+            "chain": "AZ28OpNucT2X3Q1cwj7fNQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "936f6f347e2d0567f6642e902fc64b39",
+            "path": "domain/model/Chain.hpp"
+        },
+        {
+            "chain": "AZ28OpNuebON9SAa0NwJog",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "132c6a45645b0f3dc43d3a2355cc2d63",
+            "path": "domain/model/NodeInfo.hpp"
+        },
+        {
+            "chain": "AZ28OpNudc-k8ZGjFM2zmA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "d33f3b3e893123dc25dcb9def46c986c",
+            "path": "domain/model/Attestation.hpp"
+        },
+        {
+            "chain": "AZ28OpNudHmv4KfRXpTCpQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "147d5a0f548429370e507ec118d07069",
+            "path": "domain/model/Http.hpp"
+        },
+        {
+            "chain": "AZ28OpNucwevLDTV1LAhYw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "0034c715e4e2a5161513924f605ad2fc",
+            "path": "domain/model/AtomicBlock.hpp"
+        },
+        {
+            "chain": "AZ28OpNudQiG7U0_HvF0BQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "fac69eff3d34d920281488987ab51902",
+            "path": "domain/model/ChainConfig.hpp"
+        },
+        {
+            "chain": "AZ28OpNuef2Q2HUdjHvQQw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "b09f4dcea794f787d2295cc3dd969362",
+            "path": "domain/model/Paradox.hpp"
+        },
+        {
+            "chain": "AZ28OpNufBK2NGkLSFIv2g",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "b514d903f6b2395bb228f1782a36d54d",
+            "path": "domain/graph/IGraphVisitor.hpp"
+        },
+        {
+            "chain": "AZ28OpNucmGPbXBv6Pt-NA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "c4111a576ebbc3edf7e138300c996bca",
+            "path": "domain/graph/GraphElement.cpp"
+        },
+        {
+            "chain": "AZ28OpNucKWgcwo_YLxAXQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "3153226d6c10655e178e09f6baaf5e78",
+            "path": "domain/graph/GraphElement.hpp"
+        },
+        {
+            "chain": "AZ28OpNucCi7iuQ731KPXA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "07e53a920a313e0394433e1eeed21884",
+            "path": "domain/graph/GraphDiffer.cpp"
+        },
+        {
+            "chain": "AZ28OpNudD2njBiRi3pQ3w",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "f182265e46047b1fe8dbea09a1e2bf6d",
+            "path": "domain/graph/Action.hpp"
+        },
+        {
+            "chain": "AZ28OpNudm2KT6cD63uSgQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "84509862a1cd76ca35a429765603ebc4",
+            "path": "domain/graph/GraphDiffer.hpp"
+        },
+        {
+            "chain": "AZ28OpNvfZaxx83JZ4W6GA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "aa2a1a3df1a58db127ed15db90f79cbf",
+            "path": "domain/graph/IGraphRebuilder.hpp"
+        },
+        {
+            "chain": "AZ28OpNveIm8Boxxi83__A",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "045115ec7a1a0414b2793e34c2f417e9",
+            "path": "domain/graph/Action.cpp"
+        },
+        {
+            "chain": "AZ28OpNvel-kEx1O_saaOw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "91ef67f75c7acc964f36251d7116d67c",
+            "path": "domain/graph/Graph.cpp"
+        },
+        {
+            "chain": "AZ28OpNve527Rp-iKczFkg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "5b2f05ff3717a48ec85527e122613e96",
+            "path": "domain/graph/Graph.hpp"
+        },
+        {
+            "chain": "AZ28OpNvcZOE5X7jKQwxhQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "dac2a301ce332702d95e920bc3956973",
+            "path": "domain/deploy/DeployPlanner.cpp"
+        },
+        {
+            "chain": "AZ28OpNvfXicaIEh2cLk3Q",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "e1f29fda6e1bda1c319b7eeaceccaa8c",
+            "path": "domain/deploy/DeployPlanner.hpp"
+        },
+        {
+            "chain": "AZ28OpNvfjG49qvfZ_0Umw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "bcd1e182f49318b08c36cb19fb82bc8f",
+            "path": "domain/port/IParadoxFragmentRepository.hpp"
+        },
+        {
+            "chain": "AZ28OpNvdmSn44B34sGUEg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "029ff85813d208b14b9e401bb45c569e",
+            "path": "domain/port/ICryptoService.hpp"
+        },
+        {
+            "chain": "AZ28OpNvfZq2HUR1r0egfQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "11787dbba0a93baa12926a101ebba6a8",
+            "path": "domain/port/ISecretSharing.hpp"
+        },
+        {
+            "chain": "AZ28OpNveze-nrUnJNYDdA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "9e9ab869885b10dd55e10c1adb22a466",
+            "path": "domain/port/IChainRepository.hpp"
+        },
+        {
+            "chain": "AZ28OpNvfTeAu0H3XhivEg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "b0cd09a03c6781922b67349978f82bd2",
+            "path": "domain/port/ISymmetricCrypto.hpp"
+        },
+        {
+            "chain": "AZ28OpNvc1ag4mX4WE17fg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "fc4ffc7096882bd38302fe6295e2c056",
+            "path": "domain/port/IStateRepository.hpp"
+        },
+        {
+            "chain": "AZ28OrizfTqloEvsSrDyiA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "72c2eb15f9edbf2ca4d01fa339b8dcc6",
+            "path": "use_case/AbstractCommand.hpp"
+        },
+        {
+            "chain": "AZ28OrizeyCxa-03IBZNlA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "47c2a53c0400d1bb3cf4dd9c936e2e89",
+            "path": "use_case/PushCommand.hpp"
+        },
+        {
+            "chain": "AZ28OrizfDyaEsyJCfnqug",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "3aa0a84f767eead25c1c1c42e67f18f8",
+            "path": "use_case/LoginCommand.hpp"
+        },
+        {
+            "chain": "AZ28Orize3OY34o6hoC1jg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "0c31469864c97da03edfd1fadfdc6960",
+            "path": "use_case/StatusCommand.hpp"
+        },
+        {
+            "chain": "AZ28OrizcguNi-dgRSKwoQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "6d30273c05b20d109c3005a9da3ec047",
+            "path": "use_case/LastCommitCommand.hpp"
+        },
+        {
+            "chain": "AZ28OrizdmW8whCiKH0TNQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "e556f9ee08e43817bae2eb43e37a26a6",
+            "path": "use_case/IgnoreCommand.hpp"
+        },
+        {
+            "chain": "AZ28OrizcYGsBcfGnyOr5g",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "60218f2b8460e84691eae1e8370f568c",
+            "path": "use_case/InitCommand.hpp"
+        },
+        {
+            "chain": "AZ28OrizcsOu6TA7TJpJdQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "bca0e940939af1e4834e52ce40b3dd11",
+            "path": "use_case/ChainCommand.hpp"
+        },
+        {
+            "chain": "AZ28OrizfoiAPDOPCjEr0g",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "7b59ed8f5ddab8c8e2c051f952af2b4b",
+            "path": "use_case/GraphCommand.hpp"
+        },
+        {
+            "chain": "AZ28OrizfHK4smm3p3nzEw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "f0191f6d04f1f2f5c48fd50eca225d94",
+            "path": "use_case/IdentityCommand.hpp"
+        },
+        {
+            "chain": "AZ28Orizc9Kxmsvl59yrMA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "964a6bb407f8a894a342368850b622a3",
+            "path": "use_case/UncommitCommand.hpp"
+        },
+        {
+            "chain": "AZ28Ori0cTq-_MRd-MW_FQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "ef943e21e33b91a8bda64a9ef57a4a1e",
+            "path": "use_case/CommitCommand.hpp"
+        },
+        {
+            "chain": "AZ28Ori0e2aveBBs7KUklQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "e28dc54bb8fa1c757d8b617ba47f1c71",
+            "path": "use_case/ApiCommand.hpp"
+        },
+        {
+            "chain": "AZ28Ori0eQ60r4U2DkX5SQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "4d6d83b07120b582b1fe3362c99bc460",
+            "path": "use_case/AddCommand.hpp"
+        },
+        {
+            "chain": "AZ28Ori0eSG7xYbrucAC4Q",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "dcffc3ec140d326a661d06c1bb99a800",
+            "path": "use_case/DownloadCommand.hpp"
+        },
+        {
+            "chain": "AZ28OsS6fuOj10llML3KKQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "68ca76771e8e4cdce569d6a28fb267ac",
+            "path": "infrastructure/context/AppContext.hpp"
+        },
+        {
+            "chain": "AZ28OsS6frK6k575YWsfWw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "9bb0b4121160e4489db0e1dbc2a55de1",
+            "path": "infrastructure/crypto/OpenSSLCryptoService.hpp"
+        },
+        {
+            "chain": "AZ28OsS6eQS6ZYV_F_xmyQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "32e97d970c646b4c10508a22de90d638",
+            "path": "infrastructure/crypto/OpenSSLCryptoService.cpp"
+        },
+        {
+            "chain": "AZ28OsS7czKuOQe6R7_Mxw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "578100aa07df3bca84e6e88484837c0a",
+            "path": "infrastructure/deploy_config/DeployClient.cpp"
+        },
+        {
+            "chain": "AZ28OsS7cgCw1JwMzxB-LA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "53d6a53bedf0e8ebee18f7e4ccd98564",
+            "path": "infrastructure/deploy_config/DeployConfig.cpp"
+        },
+        {
+            "chain": "AZ28OsS7eS2L-HCfOzgkMw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "dfafa6e8b0faabfb38dbba5c76f5fe43",
+            "path": "infrastructure/deploy_config/DeployConfig.hpp"
+        },
+        {
+            "chain": "AZ28OsS7fLmUoKddOgmOjg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "ff8264fb7e7cd1506b7c75335477a0f8",
+            "path": "infrastructure/deploy_config/DeployClient.hpp"
+        },
+        {
+            "chain": "AZ28OsS7eRiv-yNSnk34MA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "c5f4fa027c92dbc4904958bebf7d7cfe",
+            "path": "infrastructure/parser/GraphParser.hpp"
+        },
+        {
+            "chain": "AZ28OsS7dimrECeSZ_qO3w",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "b2a0da375044155d7e2596a501b64a19",
+            "path": "infrastructure/parser/GraphParser.cpp"
+        },
+        {
+            "chain": "AZ28OsS7doGathzszDscdw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "75e180c777f19bd9583fca3e74f164f4",
+            "path": "infrastructure/languages/markdown/MarkdownGenerator.hpp"
+        },
+        {
+            "chain": "AZ28OsS7dR6GWlmVynpIlg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "388e7760e5aabf36bf98343e78a7a512",
+            "path": "infrastructure/languages/markdown/MarkdownParser.hpp"
+        },
+        {
+            "chain": "AZ28OsS7csmuCuxnJQrZHA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "7ba758531ac47f52f24f736bbdd8dcb1",
+            "path": "infrastructure/languages/css/CssGenerator.hpp"
+        },
+        {
+            "chain": "AZ28OsS7dWigcP8bknZupg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "86bc912078945359902edbe562953237",
+            "path": "infrastructure/languages/css/CssParser.hpp"
+        },
+        {
+            "chain": "AZ28OsS7c8S6Lo8GHLLn0A",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "190a561ec9d6d88d657ab563cc3f4581",
+            "path": "infrastructure/languages/cpp/CppParser.hpp"
+        },
+        {
+            "chain": "AZ28OsS7eAC8AQtdfQTBjQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "3519e86ac9d83f09a2849af0a19be242",
+            "path": "infrastructure/languages/cpp/CppGenerator.hpp"
+        },
+        {
+            "chain": "AZ28OsS7cki1V7yvhMW9yQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "bc54a81d30a4249c60f131c514b33c6a",
+            "path": "infrastructure/languages/html/HtmlParser.hpp"
+        },
+        {
+            "chain": "AZ28OsS7dcusRCWsrQqHqA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "5122b71da2823ba0eb90317ceea03e00",
+            "path": "infrastructure/languages/html/HtmlGenerator.hpp"
+        },
+        {
+            "chain": "AZ28OsS7c42nIg2d6lJqkA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "eb90062177899eba116c3f7735472cf1",
+            "path": "infrastructure/languages/javascript/JsParser.hpp"
+        },
+        {
+            "chain": "AZ28OsS7c4SJhrtwnNqA0g",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "883b17a7aa672e2dd1f4cc2c6d5874c4",
+            "path": "infrastructure/languages/javascript/JsNodeFactory.hpp"
+        },
+        {
+            "chain": "AZ28OsS7fZ6Wk719GgVaQQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "98c3edeaab9ea49b4c52d144bea3bcff",
+            "path": "infrastructure/languages/javascript/JsNodeEmitter.hpp"
+        },
+        {
+            "chain": "AZ28OsS7cICU1meH-lUppg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "8fa08691fd31a198ad77ecd6ebee0548",
+            "path": "infrastructure/languages/javascript/VmPool.hpp"
+        },
+        {
+            "chain": "AZ28OsS7cUeWBye8Wpi8iQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "068a5e6f48dae29418d6f37f6cf3d214",
+            "path": "infrastructure/languages/javascript/JsParser.cpp"
+        },
+        {
+            "chain": "AZ28OsS7cECVfDkb8yq5cg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "233685487769c5c9f2e535262316392c",
+            "path": "infrastructure/languages/javascript/JsExecutor.hpp"
+        },
+        {
+            "chain": "AZ28OsS7f3eN1L5TTIqZYA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "166069abc36a0190c6f9fb6bbcbc9629",
+            "path": "infrastructure/languages/javascript/SandboxedVm.hpp"
+        },
+        {
+            "chain": "AZ28OsS7e2agBzXSuhLvcw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "18b1741221c08ae0a90959d02deb4dcf",
+            "last_synced_hash": "",
+            "path": "infrastructure/languages/javascript/JsGenerator.cpp"
+        },
+        {
+            "chain": "AZ28OsS7eryOjfA2nEP7GA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "4e0017d03ec99c02fa57d8b8f601c323",
+            "path": "infrastructure/languages/javascript/VmInfraBinder.hpp"
+        },
+        {
+            "chain": "AZ28OsS8fYeD30EBWtA-Mw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "9d555692a8832c15bf7a01495ea78a38",
+            "path": "infrastructure/languages/javascript/JsGenerator.hpp"
+        },
+        {
+            "chain": "AZ28OsS8cieUbUKCk-I9OA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "ee29d033fe70bf4b5270145292e59473",
+            "path": "infrastructure/blackhole/GraphActionEmitter.hpp"
+        },
+        {
+            "chain": "AZ28OsS8eVS8kzHMDMPKeQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "7760d7fd50bd3bb64f314a3c19ea620b",
+            "path": "infrastructure/blackhole/BlackholeRebuilder.hpp"
+        },
+        {
+            "chain": "AZ28OsS8fGKQwriotW0z1A",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "2648011cadaec08cc539e34c643837cd",
+            "path": "infrastructure/blackhole/BlackholeRebuilder.cpp"
+        },
+        {
+            "chain": "AZ28OsS8doKGUWd14bsYVQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "b10c7a972c1e5f1670a594243935adf4",
+            "path": "infrastructure/wallet/WalletHelper.hpp"
+        },
+        {
+            "chain": "AZ28OsS8dISD0wJZcO8vlw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "3f654bb5aa2882073846d31d13afee9b",
+            "path": "infrastructure/chain/NetworkClient.hpp"
+        },
+        {
+            "chain": "AZ28OsS8flKYGau1ZhUArQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "53ca1fd45e81facecbcf856208e9e2fa",
+            "path": "infrastructure/chain/TxManager.hpp"
+        },
+        {
+            "chain": "AZ28OsS8efqrfdc4KNR-RQ",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "95c01ca5affe0b7cb2e4c430840e105e",
+            "path": "infrastructure/chain/TxManager.cpp"
+        },
+        {
+            "chain": "AZ28OsS8dq2WDXndgSfaZw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "3a7feb3fabdf3e2e2b372fd518578bf3",
+            "path": "infrastructure/network/Serialization.hpp"
+        },
+        {
+            "chain": "AZ28OsS8dF62ip2ETUzxzg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "c59f25838b6567f5e77e06287a7e9c92",
+            "path": "infrastructure/ignore/IgnoreManager.hpp"
+        },
+        {
+            "chain": "AZ28OuIReJStdLEL-EJeAg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "73fc19731a71ae312345d80c4450e1fd",
+            "path": "common/Uuid.cpp"
+        },
+        {
+            "chain": "AZ28OuIRePerw9saohK5Rw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "aef6f53225955a5b2c96fa495b7562c5",
+            "path": "common/IO.hpp"
+        },
+        {
+            "chain": "AZ28OuIRefezyhJXczD-Yw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "c99e49b34e4c11e1533f2eef991e9866",
+            "path": "common/Logger.hpp"
+        },
+        {
+            "chain": "AZ28OuIRdnacZsdAZ8bscw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "d3cd189ae3d876911737d516129fcf73",
+            "path": "common/ScopedTimer.hpp"
+        },
+        {
+            "chain": "AZ28OuISfwiTobxfXa5R1A",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "2206f383e80044ce9d90d79c1aff3159",
+            "path": "common/Base64.hpp"
+        },
+        {
+            "chain": "AZ28OuISdJ-DMlHEF30uSA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "d88f1d1dca6d3e28c5aadcedc7d8697a",
+            "path": "common/Hash.hpp"
+        },
+        {
+            "chain": "AZ28OuISczmvK16bSBAwqg",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "0e28ea604010e320fc8b7cabb8a4584d",
+            "path": "common/Helper.hpp"
+        },
+        {
+            "chain": "AZ28OuISe1OJj1S0vMzSYA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "b2e4f0b71f06efed4c5561bd4051958f",
+            "path": "common/Hash.cpp"
+        },
+        {
+            "chain": "AZ28OuISfbiuVW3Gs_vbeA",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "0f231369399f9de02f0ca90c8ad33294",
+            "path": "common/Uuid.hpp"
+        },
+        {
+            "chain": "AZ28OuISd-OvZSGAysWonw",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_revision_id": "",
+            "last_synced_hash": "ff4e7503b558e29d778a12903dea7000",
+            "path": "common/ThreadPool.hpp"
+        }
+    ],
+    "version": 1
+}
