@@ -46,7 +46,7 @@ namespace utx::app::domain {
     };
 
     /** Enumeration of target kinds for deployment. */
-    enum class TargetKind { Html, Js, Css, Graph, Identity, Cpp, Json };
+    enum class TargetKind { Html, Js, Css, Markdown, Graph, Identity, Cpp, Json };
     /** Convert a TargetKind enum value to its string representation.
      * @param k TargetKind enum value.
      * @return String representation of the TargetKind.

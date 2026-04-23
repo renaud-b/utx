@@ -10,12 +10,10 @@
 
 namespace utx::infra::languages::css {
 
-/**
- * @brief Génère du code CSS à partir d'un arbre de GraphElement.
- * * Conventions de structure :
- * - Nœud "Stylesheet" : Conteneur racine, on visite simplement les enfants.
- * - Nœud "Rule" : Représente un bloc de style (sélecteur + propriétés).
- * - Nœud "Media" : Représente une règle @media.
+/** Generate CSS code from a graph representation of CSS rules.
+ * The graph is expected to have a specific structure where nodes represent CSS constructs (e.g., rules, media queries, keyframes)
+ * and properties represent CSS properties and values.
+ * This class implements the IGraphVisitor interface to traverse the graph and build the corresponding CSS string output.
  */
 class CssGenerator final : public domain::graph::IGraphVisitor {
 public:
@@ -58,11 +56,8 @@ public:
 
         return oss.str();
     }
-    /**
-     * @brief Point d'entrée pour convertir un nœud et ses enfants en CSS.
-     */
+
     void convert_node_to_css(const domain::graph::GraphElement& element, std::ostream& os) const {
-        // On récupère la sémantique via la propriété "tag"
         std::string tag = element.get_property("tag");
 
         if (tag == "stylesheet") {
@@ -78,16 +73,12 @@ public:
         } else if (tag == "keyframe") {
             os << render_keyframe(element);
         } else {
-            // Passthrough pour le root technique ou les fragments
             for (const auto& child : element.children()) {
                 os << render_element(child);
             }
         }
     }
 
-    /**
-     * @brief Implémentation de l'interface IGraphVisitor.
-     */
     void visit(const std::shared_ptr<domain::graph::GraphElement>& element) override {
         if (!element) return;
         std::ostringstream oss;
@@ -113,7 +104,6 @@ private:
         oss << selector << "{";
 
         for (const auto& [prop, val] : e.properties()) {
-            // On ignore les métadonnées techniques du graphe
             if (prop == "selector" || prop == "tag" || prop == "utx.generator" || val == "nil") {
                 continue;
             }
@@ -130,7 +120,6 @@ private:
 
         oss << "@media " << (condition.empty() ? "all" : condition) << "{";
 
-        // Un @media contient généralement des Rules comme enfants
         for (const auto& child : e.children()) {
             oss << render_element(child);
         }

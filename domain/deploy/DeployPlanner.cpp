@@ -8,6 +8,7 @@
 #include "infrastructure/languages/javascript/JsParser.hpp"
 #include "infrastructure/languages/css/CssParser.hpp"
 #include "infrastructure/languages/cpp/CppParser.hpp"
+#include "infrastructure/languages/markdown/MarkdownParser.hpp"
 #include "infrastructure/blackhole/BlackholeRebuilder.hpp"
 #include "infrastructure/wallet/WalletHelper.hpp"
 #include "domain/model/AtomicBlock.hpp"
@@ -68,6 +69,11 @@ std::shared_ptr<GraphElement> parse_content(
         return parser.parse(content);
     }
 
+    if (kind == "markdown") {
+        utx::infra::languages::markdown::MarkdownParser parser;
+        return parser.parse(content);
+    }
+
     if (kind == "cpp") {
         utx::infra::languages::cpp::CppParser::Options opt;
         opt.emit_unnamed_tokens = true;
@@ -105,6 +111,7 @@ std::string resolve_projector(const std::string& kind, const std::string& fallba
     if (kind == "js") return "JsProjector";
     if (kind == "html") return "WebProjector";
     if (kind == "css") return "CssProjector";
+    if (kind == "markdown") return "MarkdownProjector";
     if (kind == "cpp") return "CppProjector";
     if (kind == "graph") return "GraphProjector";
     return fallback;

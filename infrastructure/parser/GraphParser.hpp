@@ -9,6 +9,7 @@
 #include "domain/graph/GraphElement.hpp"
 #include "infrastructure/languages/html/HtmlParser.hpp"
 #include "infrastructure/languages/cpp/CppParser.hpp"
+#include "infrastructure/languages/markdown/MarkdownParser.hpp"
 #include "infrastructure/languages/javascript/JsParser.hpp"
 
 namespace utx::app::infrastructure::parser {
@@ -127,6 +128,16 @@ namespace utx::app::infrastructure::parser {
                     return parser.parse(content);
                 } catch (...) {
                     LOG_THIS_ERROR("{}❌ CSS parsing failed for file '{}'.{}",
+                                   utx::app::domain::color::red, path.string(), utx::app::domain::color::reset);
+                    return nullptr;
+                }
+            }
+            if (kind == utx::app::domain::TargetKind::Markdown) {
+                try {
+                    utx::infra::languages::markdown::MarkdownParser parser;
+                    return parser.parse(content);
+                } catch (...) {
+                    LOG_THIS_ERROR("{}❌ Markdown parsing failed for file '{}'.{}",
                                    utx::app::domain::color::red, path.string(), utx::app::domain::color::reset);
                     return nullptr;
                 }
