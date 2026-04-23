@@ -4,19 +4,20 @@
 #include <vector>
 #include <string>
 #include <unordered_set>
-#include <future>
 #include <mutex>
 
 #include "AbstractCommand.hpp"
 #include "PushCommand.hpp"
 #include "common/Logger.hpp"
 #include "common/Hash.hpp"
-#include "domain/graph/Action.hpp"
+#include "common/ThreadPool.hpp"
 
 namespace utx::app::use_case {
 
 class CommitCommand final : public AbstractCommand {
 public:
+    static constexpr size_t kMaxThreads = 4;
+
     explicit CommitCommand(const infrastructure::context::AppContext &ctx)
         : ctx_(ctx) {}
 
@@ -52,108 +53,117 @@ public:
         size_t total_blocks_emitted = 0;
 
         std::unordered_set<std::string> touched_paths;
-
         std::mutex global_mutex;
 
+        utx::common::ThreadPool pool(kMaxThreads);
         std::vector<std::future<void>> futures;
 
-        for (auto &target : ctx_.deploy_config.targets) {
+        for (auto &target_ref : ctx_.deploy_config.targets) {
 
-            futures.emplace_back(std::async(std::launch::async, [&]() {
+            // 🔥 capture propre
+            auto target = target_ref;
 
-                auto deploy_client = ctx_.deploy_client();
+            futures.emplace_back(
+                pool.enqueue([&, target]() {
 
-                std::filesystem::path local_path = ctx_.root / target.path;
+                    auto deploy_client = ctx_.deploy_client();
 
-                if (!std::filesystem::exists(local_path) ||
-                    !std::filesystem::is_regular_file(local_path))
-                    return;
+                    std::filesystem::path local_path = ctx_.root / target.path;
 
-                if (!target.last_revision_id.empty()) {
-                    LOG_THIS_WARN(
-                        "  {}⚠️ {} already committed (rev:{}). Use 'utx push'.{}",
-                        utx::app::domain::color::yellow,
-                        target.path,
-                        target.last_revision_id,
-                        utx::app::domain::color::reset);
-                    return;
-                }
+                    if (!std::filesystem::exists(local_path) ||
+                        !std::filesystem::is_regular_file(local_path))
+                        return;
 
-                const std::string raw_content =
-                    common::io::read_file(local_path.string());
+                    if (!target.last_revision_id.empty()) {
+                        LOG_THIS_WARN(
+                            "  {}⚠️ {} already committed (rev:{}). Use 'utx push'.{}",
+                            utx::app::domain::color::yellow,
+                            target.path,
+                            target.last_revision_id,
+                            utx::app::domain::color::reset);
+                        return;
+                    }
 
-                const std::string current_hash =
-                    common::md5_hex(raw_content);
+                    const std::string raw_content =
+                        common::io::read_file(local_path.string());
 
-                if (!target.last_synced_hash.empty() &&
-                    current_hash == target.last_synced_hash)
-                    return;
+                    const std::string current_hash =
+                        common::md5_hex(raw_content);
 
-                domain::DeployRequest req;
-                req.chain_id = target.chain;
-                req.file_path = target.path;
-                req.kind = to_string(target.kind);
-                req.content = raw_content;
-                req.commit_message = commit_message;
-                req.force_snapshot = force_snapshot;
+                    if (!target.last_synced_hash.empty() &&
+                        current_hash == target.last_synced_hash)
+                        return;
 
-                auto plan_res = deploy_client.prepare(req, my_address.to_string());
+                    domain::DeployRequest req;
+                    req.chain_id = target.chain;
+                    req.file_path = target.path;
+                    req.kind = to_string(target.kind);
+                    req.content = raw_content;
+                    req.commit_message = commit_message;
+                    req.force_snapshot = force_snapshot;
 
-                if (!plan_res) {
-                    LOG_THIS_ERROR(
-                        "  {}❌ Deploy prepare failed for {} [{}]: {}{}",
-                        utx::app::domain::color::red,
-                        target.path,
-                        target.chain,
-                        plan_res.error(),
-                        utx::app::domain::color::reset);
-                    return;
-                }
+                    auto plan_res = deploy_client.prepare(req, my_address.to_string());
 
-                const auto &plan = *plan_res;
+                    if (!plan_res) {
+                        LOG_THIS_ERROR(
+                            "  {}❌ Deploy prepare failed for {} [{}]: {}{}",
+                            utx::app::domain::color::red,
+                            target.path,
+                            target.chain,
+                            plan_res.error(),
+                            utx::app::domain::color::reset);
+                        return;
+                    }
 
-                if (!plan.contains("transactions") || !plan["transactions"].is_array()) {
-                    LOG_THIS_ERROR("  ❌ Invalid plan returned by node for {}", target.path);
-                    return;
-                }
+                    const auto &plan = *plan_res;
 
-                const auto &txs = plan["transactions"];
+                    if (!plan.contains("transactions") || !plan["transactions"].is_array()) {
+                        LOG_THIS_ERROR("  ❌ Invalid plan returned by node for {}", target.path);
+                        return;
+                    }
 
-                if (txs.empty()) {
-                    std::lock_guard lock(global_mutex);
-                    target.last_synced_hash = current_hash;
-                    return;
-                }
+                    const auto &txs = plan["transactions"];
 
-                std::string chain_segment;
+                    if (txs.empty()) {
+                        std::lock_guard lock(global_mutex);
+                        for (auto &t : ctx_.deploy_config.targets)
+                            if (t.path == target.path)
+                                t.last_synced_hash = current_hash;
+                        return;
+                    }
 
-                for (const auto &tx : txs) {
-                    const std::string payload = tx["payload_data"].get<std::string>();
-                    chain_segment += payload + "\n";
-                }
+                    std::string chain_segment;
+                    chain_segment.reserve(txs.size() * 256); // petite opti
 
-                // 🔒 Critical section
-                {
-                    std::lock_guard lock(global_mutex);
+                    for (const auto &tx : txs) {
+                        const std::string payload = tx["payload_data"].get<std::string>();
+                        chain_segment += payload;
+                        chain_segment += "\n";
+                    }
 
-                    touched_paths.insert(target.path);
+                    // 🔒 section critique
+                    {
+                        std::lock_guard lock(global_mutex);
 
-                    LOG_THIS_INFO("  📊 {}:", target.path);
-                    if (plan.contains("strategy"))
-                        LOG_THIS_INFO("     Strategy: {}", plan["strategy"].get<std::string>());
-                    LOG_THIS_INFO("     Transactions: {}", txs.size());
+                        touched_paths.insert(target.path);
 
-                    global_revision_content += "CHAIN:" + target.chain + "\n";
-                    global_revision_content += "PLAN:" + plan["plan_id"].get<std::string>() + "\n";
-                    global_revision_content += chain_segment + "\n";
+                        LOG_THIS_INFO("  📊 {}:", target.path);
+                        if (plan.contains("strategy"))
+                            LOG_THIS_INFO("     Strategy: {}", plan["strategy"].get<std::string>());
+                        LOG_THIS_INFO("     Transactions: {}", txs.size());
 
-                    total_blocks_emitted += static_cast<uint8_t>(txs.size());
-                    total_chains_modified++;
-                }
-            }));
+                        global_revision_content += "CHAIN:" + target.chain + "\n";
+                        global_revision_content += "PLAN:" + plan["plan_id"].get<std::string>() + "\n";
+                        global_revision_content += chain_segment + "\n";
+
+                        total_blocks_emitted += static_cast<uint8_t>(txs.size());
+                        total_chains_modified++;
+                    }
+                })
+            );
         }
 
-        // 🔥 Wait all
+        // 🔥 attendre toutes les tâches
         for (auto &f : futures)
             f.get();
 
@@ -204,7 +214,6 @@ public:
             if (debug_flag)
                 return PushCommand(ctx_).execute({"--debug"});
             return PushCommand(ctx_).execute({});
-
         }
 
         LOG_THIS_INFO("Ready for push.");

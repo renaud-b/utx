@@ -2,17 +2,24 @@
 
 #include <algorithm>
 #include <cctype>
+#include <array>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <future>
+#include <atomic>
+#include <iostream>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "AbstractCommand.hpp"
 #include "common/Hash.hpp"
 #include "common/Logger.hpp"
+#include "common/ThreadPool.hpp"
 #include "domain/Types.hpp"
 #include "infrastructure/context/AppContext.hpp"
 #include "infrastructure/deploy_config/DeployConfig.hpp"
@@ -20,6 +27,7 @@
 #include "infrastructure/languages/css/CssGenerator.hpp"
 #include "infrastructure/languages/html/HtmlGenerator.hpp"
 #include "infrastructure/languages/javascript/JsGenerator.hpp"
+#include "infrastructure/languages/markdown/MarkdownGenerator.hpp"
 
 namespace utx::app::use_case {
     namespace fs = std::filesystem;
@@ -28,6 +36,8 @@ namespace utx::app::use_case {
 
     class DownloadCommand final : public AbstractCommand {
     public:
+        static constexpr size_t kMaxParallelDownloads = 8;
+
         explicit DownloadCommand(infrastructure::context::AppContext ctx)
             : ctx_(std::move(ctx)) {}
 
@@ -105,17 +115,7 @@ namespace utx::app::use_case {
                 return 1;
             }
 
-            const auto manifest_json = graph_element_to_json(*manifest_graph->root());
-            app_domain::DeployConfig deploy_config;
-            try {
-                deploy_config = manifest_json.get<app_domain::DeployConfig>();
-            } catch (const std::exception& e) {
-                LOG_THIS_ERROR("{}❌ Failed to decode manifest: {}{}",
-                               app_domain::color::red,
-                               e.what(),
-                               app_domain::color::reset);
-                return 1;
-            }
+            const auto deploy_config = reconstruct_deploy_config(*manifest_graph->root());
 
             if (!dry_run) {
                 if (auto res = infrastructure::deploy::DeployConfigManager::save_deploy_config_atomic(
@@ -132,10 +132,145 @@ namespace utx::app::use_case {
             ctx_.deploy_config = deploy_config;
             ctx_.project_config.deploy_chain = manifest_chain_id;
 
+            struct DownloadOutcome {
+                std::string path;
+                std::string chain;
+                std::string error;
+                std::size_t bytes{0};
+            };
+
+            std::vector<DownloadOutcome> outcomes(ctx_.deploy_config.targets.size());
+            std::atomic<std::size_t> completed{0};
+
+            if (!dry_run) {
+                for (const auto& target : ctx_.deploy_config.targets) {
+                    if (target.path.empty()) {
+                        continue;
+                    }
+
+                    const auto out_path = ctx_.root / target.path;
+                    const auto parent = out_path.parent_path();
+                    if (!parent.empty()) {
+                        std::error_code ec;
+                        fs::create_directories(parent, ec);
+                        if (ec) {
+                            LOG_THIS_ERROR("{}❌ Could not create parent directories for {}: {}{}",
+                                           app_domain::color::red,
+                                           target.path,
+                                           ec.message(),
+                                           app_domain::color::reset);
+                        }
+                    }
+                }
+            }
+
+            const std::size_t worker_count = std::max<std::size_t>(
+                1,
+                std::min<std::size_t>(kMaxParallelDownloads, ctx_.deploy_config.targets.size()));
+
+            LOG_THIS_INFO("{}🧵 Downloading {} target(s) with up to {} workers...{}",
+                          app_domain::color::cyan,
+                          ctx_.deploy_config.targets.size(),
+                          worker_count,
+                          app_domain::color::reset);
+
+            utx::common::ThreadPool pool(worker_count);
+            std::vector<std::future<void>> futures;
+            futures.reserve(ctx_.deploy_config.targets.size());
+
+            std::atomic<bool> loader_running{true};
+            std::thread loader_thread;
+            if (!ctx_.deploy_config.targets.empty()) {
+                loader_thread = std::thread([&]() {
+                    const std::array<char, 4> spinner{'|', '/', '-', '\\'};
+                    std::size_t tick = 0;
+                    while (loader_running.load()) {
+                        const auto done = completed.load();
+                        std::cout << "\r" << app_domain::color::cyan
+                                  << "⏳ " << spinner[tick % spinner.size()]
+                                  << " Downloading " << done << "/" << ctx_.deploy_config.targets.size()
+                                  << " target(s)..." << app_domain::color::reset << std::flush;
+                        ++tick;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    }
+
+                    const auto done = completed.load();
+                    std::cout << "\r" << std::string(80, ' ') << "\r"
+                              << app_domain::color::cyan
+                              << "⏳ Downloading " << done << "/" << ctx_.deploy_config.targets.size()
+                              << " target(s)..." << app_domain::color::reset << std::flush;
+                });
+            }
+
+            for (std::size_t index = 0; index < ctx_.deploy_config.targets.size(); ++index) {
+                const auto target = ctx_.deploy_config.targets[index];
+                futures.emplace_back(pool.enqueue([this, target, dry_run, index, &outcomes, &completed]() {
+                    auto& outcome = outcomes[index];
+                    outcome.path = target.path;
+                    outcome.chain = target.chain;
+
+                    if (target.chain.empty()) {
+                        outcome.error = "missing chain id";
+                        ++completed;
+                        return;
+                    }
+
+                    infrastructure::chain::NetworkClient local_client{ctx_.network_client.target};
+                    auto file_graph = local_client.fetch_graph_state(target.chain);
+                    if (!file_graph || !file_graph->root()) {
+                        outcome.error = file_graph ? "missing graph root" : file_graph.error();
+                        ++completed;
+                        return;
+                    }
+
+                    const auto content = render_target(file_graph->root(), target.kind);
+                    outcome.bytes = content.size();
+
+                    if (!dry_run) {
+                        const auto out_path = ctx_.root / target.path;
+                        std::ofstream out(out_path, std::ios::trunc);
+                        if (!out) {
+                            outcome.error = "could not open output file";
+                            ++completed;
+                            return;
+                        }
+
+                        out << content;
+                        if (!out) {
+                            outcome.error = "failed to write output file";
+                            ++completed;
+                            return;
+                        }
+                    }
+                    ++completed;
+                }));
+            }
+
+            for (auto& future : futures) {
+                future.get();
+            }
+
+            loader_running = false;
+            if (loader_thread.joinable()) {
+                loader_thread.join();
+            }
+
+            if (!ctx_.deploy_config.targets.empty()) {
+                std::cout << std::endl;
+            }
+
             size_t downloaded = 0;
             size_t failed = 0;
 
             for (const auto& target : ctx_.deploy_config.targets) {
+                const auto it = std::ranges::find_if(outcomes, [&](const auto& outcome) {
+                    return outcome.path == target.path && outcome.chain == target.chain;
+                });
+                if (it == outcomes.end()) {
+                    ++failed;
+                    continue;
+                }
+
                 if (target.chain.empty()) {
                     LOG_THIS_WARN("{}⚠️ Skipping {} because it has no chain id.{}",
                                   app_domain::color::yellow,
@@ -145,66 +280,30 @@ namespace utx::app::use_case {
                     continue;
                 }
 
-                auto file_graph = ctx_.network_client.fetch_graph_state(target.chain);
-                if (!file_graph || !file_graph->root()) {
-                    LOG_THIS_ERROR("{}❌ Could not fetch target {} on chain {}.{}",
+                if (!it->error.empty()) {
+                    LOG_THIS_ERROR("{}❌ Could not restore {} on chain {}: {}{}",
                                    app_domain::color::red,
                                    target.path,
                                    target.chain,
+                                   it->error,
                                    app_domain::color::reset);
                     ++failed;
                     continue;
                 }
 
-                const auto content = render_target(file_graph->root(), target.kind);
                 if (dry_run) {
                     LOG_THIS_INFO("{}🧪 Would restore {} ({} bytes){}",
                                   app_domain::color::yellow,
                                   target.path,
-                                  content.size(),
+                                  it->bytes,
                                   app_domain::color::reset);
                 } else {
-                    const auto out_path = ctx_.root / target.path;
-
-                    std::error_code ec;
-                    fs::create_directories(out_path.parent_path(), ec);
-                    if (ec) {
-                        LOG_THIS_ERROR("{}❌ Could not create parent directories for {}: {}{}",
-                                       app_domain::color::red,
-                                       target.path,
-                                       ec.message(),
-                                       app_domain::color::reset);
-                        ++failed;
-                        continue;
-                    }
-
-                    std::ofstream out(out_path, std::ios::trunc);
-                    if (!out) {
-                        LOG_THIS_ERROR("{}❌ Could not open {} for writing.{}",
-                                       app_domain::color::red,
-                                       out_path.string(),
-                                       app_domain::color::reset);
-                        ++failed;
-                        continue;
-                    }
-
-                    out << content;
-                    if (!out) {
-                        LOG_THIS_ERROR("{}❌ Failed to write {}.{}",
-                                       app_domain::color::red,
-                                       out_path.string(),
-                                       app_domain::color::reset);
-                        ++failed;
-                        continue;
-                    }
+                    LOG_THIS_INFO("{}✅ Downloaded {} ({} bytes){}",
+                                  app_domain::color::green,
+                                  target.path,
+                                  it->bytes,
+                                  app_domain::color::reset);
                 }
-
-                LOG_THIS_INFO("{}✅ {} {} ({} bytes){}",
-                              dry_run ? app_domain::color::yellow : app_domain::color::green,
-                              dry_run ? "Would download" : "Downloaded",
-                              target.path,
-                              content.size(),
-                              app_domain::color::reset);
                 ++downloaded;
             }
 
@@ -298,6 +397,91 @@ namespace utx::app::use_case {
             return obj;
         }
 
+        static std::shared_ptr<const graph::GraphElement> find_child_named(
+            const graph::GraphElement& node,
+            const std::string& name) {
+            const auto& children = node.children();
+            const auto it = std::ranges::find_if(children, [&](const auto& child) {
+                return child && child->name() == name;
+            });
+            if (it == children.end()) {
+                return nullptr;
+            }
+            return *it;
+        }
+
+        static std::optional<long long> parse_integer_node(const graph::GraphElement& node) {
+            const auto value = node.get_property("value");
+            if (value.empty()) {
+                return std::nullopt;
+            }
+            try {
+                return std::stoll(value);
+            } catch (...) {
+                return std::nullopt;
+            }
+        }
+
+        static std::vector<std::shared_ptr<const graph::GraphElement>> ordered_children(
+            const graph::GraphElement& node) {
+            std::vector<std::shared_ptr<const graph::GraphElement>> children;
+            for (const auto& child : node.children()) {
+                if (child) {
+                    children.push_back(child);
+                }
+            }
+            return children;
+        }
+
+        static app_domain::DeployTarget reconstruct_target(const graph::GraphElement& node) {
+            app_domain::DeployTarget target;
+
+            if (const auto path = find_child_named(node, "path")) {
+                target.path = path->get_property("value");
+            }
+            if (const auto chain = find_child_named(node, "chain")) {
+                target.chain = chain->get_property("value");
+            }
+            if (const auto kind = find_child_named(node, "kind")) {
+                target.kind = app_domain::parse_kind(kind->get_property("value")).value_or(app_domain::TargetKind::Graph);
+            }
+            if (const auto last_revision_id = find_child_named(node, "last_revision_id")) {
+                target.last_revision_id = last_revision_id->get_property("value");
+            }
+            if (const auto last_synced_hash = find_child_named(node, "last_synced_hash")) {
+                target.last_synced_hash = last_synced_hash->get_property("value");
+            }
+            if (const auto labels = find_child_named(node, "genesis_labels")) {
+                for (const auto& label_node : ordered_children(*labels)) {
+                    if (label_node) {
+                        target.genesis_labels.push_back(label_node->get_property("value"));
+                    }
+                }
+            }
+
+            return target;
+        }
+
+        static app_domain::DeployConfig reconstruct_deploy_config(const graph::GraphElement& root) {
+            app_domain::DeployConfig config;
+
+            if (const auto version = find_child_named(root, "version")) {
+                if (const auto parsed = parse_integer_node(*version)) {
+                    config.version = static_cast<int>(*parsed);
+                }
+            }
+
+            if (const auto targets = find_child_named(root, "targets")) {
+                for (const auto& target_node : ordered_children(*targets)) {
+                    if (target_node) {
+                        config.targets.push_back(reconstruct_target(*target_node));
+                    }
+                }
+            }
+
+            return config;
+        }
+
         static std::string render_target(const std::shared_ptr<graph::GraphElement>& root,
                                          const app_domain::TargetKind kind) {
             if (!root) return {};
@@ -319,6 +503,11 @@ namespace utx::app::use_case {
                     std::ostringstream oss;
                     gen.convert_node_to_css(*root, oss);
                     return oss.str();
+                }
+                case app_domain::TargetKind::Markdown: {
+                    utx::infra::languages::markdown::MarkdownGenerator gen;
+                    gen.visit(root);
+                    return gen.get_result();
                 }
                 case app_domain::TargetKind::Cpp: {
                     utx::infra::languages::cpp::CppGenerator gen;
