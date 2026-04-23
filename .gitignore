@@ -1,3 +1,7 @@
 build/
 cmake-build-debug/
-
+cmake-build-arm64/
+cmake-build-arm64-cpath/
+cmake-build-amd64/
+.utx
+.idea

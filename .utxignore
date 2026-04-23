@@ -1,0 +1,14 @@
+# Utopixia ignore rules
+# glob: *, ?, **
+# suffix '/' => directory only
+# prefix '!' => negate
+
+.utxignore
+.gitignore
+.env
+.idea
+.codex
+utx-linux-amd64-v1.0.0
+node_modules/
+build/
+cmake-build-*/
