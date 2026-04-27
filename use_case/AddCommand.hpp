@@ -26,7 +26,7 @@ namespace utx::app::use_case {
                 LOG_THIS_INFO(
                     "Usage: utx add <path> [--chain <id>] [--kind <kind>] [--force] [--label <label>] [--labels <label1,label2,...>]");
                 LOG_THIS_INFO("  --chain <id>       : Specify the target chain ID (optional).");
-                LOG_THIS_INFO("  --kind <kind>      : Specify the target kind (Graph, Html, Js, Cpp, Css, Markdown).");
+                LOG_THIS_INFO("  --kind <kind>      : Specify the target kind (Graph, Html, Js, Cpp, Css, Markdown, Go).");
                 LOG_THIS_INFO("  --force            : Force adding even if ignored by .utxignore.");
                 LOG_THIS_INFO("  --label <label>     : Add a genesis label to the target (can be used multiple times).");
                 LOG_THIS_INFO("  --labels <label1,label2,...> : Add multiple genesis labels (comma-separated).");
@@ -213,6 +213,7 @@ namespace utx::app::use_case {
             if (ext == ".js" || ext == ".mjs" || ext == ".cjs") return domain::TargetKind::Js;
             if (ext == ".css") return domain::TargetKind::Css;
             if (ext == ".md" || ext == ".markdown") return domain::TargetKind::Markdown;
+            if (ext == ".go") return domain::TargetKind::Go;
             return domain::TargetKind::Graph;
         }
 

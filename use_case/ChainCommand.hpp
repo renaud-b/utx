@@ -20,7 +20,7 @@ namespace utx::app::use_case {
                     "Usage:\n  utx chain create [--labels <label1,label2,...>] [--kind <kind>] [--chain_id <id>] [--projector <projector_name>]\n  utx chain emit --chain_id <id> --content <content>");
                 LOG_THIS_INFO(
                     "  --labels <label1,label2,...> : Add genesis labels to the new chain (comma-separated).");
-                LOG_THIS_INFO("  --kind <kind> : Specify the target kind for the chain (Graph, Html, Js, Cpp, Css, Markdown).");
+                LOG_THIS_INFO("  --kind <kind> : Specify the target kind for the chain (Graph, Html, Js, Cpp, Css, Markdown, Go).");
                 LOG_THIS_INFO(
                     "  --chain_id <id> : Optionally specify a custom chain ID (default: auto-generated UUID).");
                 LOG_THIS_INFO(
@@ -131,6 +131,8 @@ namespace utx::app::use_case {
                     selected_projector = "CssProjector";
                 } else if (kind == domain::TargetKind::Markdown) {
                     selected_projector = "MarkdownProjector";
+                } else if (kind == domain::TargetKind::Go) {
+                    selected_projector = "GoProjector";
                 }
 
                 if (!projector.empty()) {

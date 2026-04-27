@@ -26,7 +26,6 @@ public:
         log_if_slow(Clock::now() - start_);
     }
 
-    // 🔥 Static helper pour lambda
     template <typename Fn>
     static auto measure(std::string label,
                         std::chrono::milliseconds threshold,
@@ -92,7 +91,6 @@ private:
         log_static(label_, threshold_, duration, location_);
     }
 
-private:
     std::string label_;
     std::chrono::milliseconds threshold_;
     std::source_location location_;

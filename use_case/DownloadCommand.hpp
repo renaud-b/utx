@@ -26,6 +26,7 @@
 #include "infrastructure/languages/cpp/CppGenerator.hpp"
 #include "infrastructure/languages/css/CssGenerator.hpp"
 #include "infrastructure/languages/html/HtmlGenerator.hpp"
+#include "infrastructure/languages/go/GoGenerator.hpp"
 #include "infrastructure/languages/javascript/JsGenerator.hpp"
 #include "infrastructure/languages/markdown/MarkdownGenerator.hpp"
 
@@ -94,6 +95,8 @@ namespace utx::app::use_case {
             } else if (!ctx_.project_config.api_target.empty()) {
                 ctx_.network_client.target = ctx_.project_config.api_target;
             }
+
+            const auto download_started_at = std::chrono::steady_clock::now();
 
             LOG_THIS_INFO("{}⬇️ Downloading manifest from chain {} via {}...{}",
                           app_domain::color::cyan,
@@ -311,11 +314,15 @@ namespace utx::app::use_case {
                 ctx_.save_local_config();
             }
 
-            LOG_THIS_INFO("{}🎯 Download complete: {} file(s) {}, {} failed.{}",
+            const auto download_elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - download_started_at).count();
+
+            LOG_THIS_INFO("{}🎯 Download complete: {} file(s) {}, {} failed in {} ms.{}",
                           dry_run ? app_domain::color::yellow : app_domain::color::green,
                           downloaded,
                           dry_run ? "would be restored" : "restored",
                           failed,
+                          download_elapsed_ms,
                           app_domain::color::reset);
 
             return failed == 0 ? 0 : 1;
@@ -511,6 +518,11 @@ namespace utx::app::use_case {
                 }
                 case app_domain::TargetKind::Cpp: {
                     utx::infra::languages::cpp::CppGenerator gen;
+                    gen.visit(root);
+                    return gen.get_result();
+                }
+                case app_domain::TargetKind::Go: {
+                    utx::infra::languages::go::GoGenerator gen;
                     gen.visit(root);
                     return gen.get_result();
                 }

@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.31)
 cmake_policy(SET CMP0169 OLD)
-set(CMAKE_C_COMPILER "gcc-14")
-set(CMAKE_CXX_COMPILER "g++-14")
 
 project(utx)
 
@@ -11,8 +9,17 @@ set(CMAKE_CXX_EXTENSIONS ON)
 
 include(FetchContent)
 find_package(OpenSSL 3.0 REQUIRED)
-find_package(nlohmann_json REQUIRED)
 find_library(SODIUM_LIB sodium REQUIRED)
+
+
+FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+)
+
+FetchContent_MakeAvailable(nlohmann_json)
+
 # --- Force spdlog static ---
 set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
@@ -61,6 +68,12 @@ FetchContent_Declare(
         GIT_TAG v0.25.0
 )
 
+FetchContent_Declare(
+        tree_sitter_go_grammar
+        GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-go.git
+        GIT_TAG v0.23.4
+)
+
 
 FetchContent_MakeAvailable(tree_sitter_runtime)
 
@@ -77,6 +90,11 @@ endif ()
 FetchContent_GetProperties(tree_sitter_javascript_grammar)
 if (NOT tree_sitter_javascript_grammar_POPULATED)
     FetchContent_Populate(tree_sitter_javascript_grammar)
+endif ()
+
+FetchContent_GetProperties(tree_sitter_go_grammar)
+if (NOT tree_sitter_go_grammar_POPULATED)
+    FetchContent_Populate(tree_sitter_go_grammar)
 endif ()
 
 add_library(tree-sitter STATIC
@@ -110,20 +128,19 @@ endfunction()
 add_tree_sitter_grammar(tree-sitter-html ${tree_sitter_html_grammar_SOURCE_DIR})
 add_tree_sitter_grammar(tree-sitter-css ${tree_sitter_css_grammar_SOURCE_DIR})
 add_tree_sitter_grammar(tree-sitter-javascript ${tree_sitter_javascript_grammar_SOURCE_DIR})
+add_tree_sitter_grammar(tree-sitter-go ${tree_sitter_go_grammar_SOURCE_DIR})
 
 add_executable(utx
         main.cpp
         domain/Types.cpp
         infrastructure/chain/TxManager.cpp
         infrastructure/parser/GraphParser.cpp
-        infrastructure/deploy_config/DeployConfig.cpp
         common/Uuid.cpp
         common/Hash.cpp
         domain/graph/Graph.cpp
         domain/graph/GraphElement.cpp
         domain/graph/GraphDiffer.cpp
         domain/graph/Action.cpp
-        domain/deploy/DeployPlanner.cpp
         infrastructure/languages/javascript/JsParser.cpp
         infrastructure/languages/javascript/JsGenerator.cpp
         infrastructure/blackhole/BlackholeRebuilder.cpp
@@ -143,4 +160,5 @@ target_link_libraries(utx
         tree-sitter-html
         tree-sitter-css
         tree-sitter-javascript
+        tree-sitter-go
 )
