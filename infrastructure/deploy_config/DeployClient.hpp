@@ -50,16 +50,6 @@ namespace utx::app::infrastructure::deploy {
                const nlohmann::json& ring_reference,
                const nlohmann::json& signed_txs);
 
-        /**
-         * Legacy submit kept temporarily for commands that have not yet migrated
-         * to the asynchronous deploy protocol.
-         */
-        [[nodiscard]]
-        std::expected<void, std::string>
-        submit(const std::string& plan_id,
-               const std::string& chain_id,
-               const nlohmann::json& signed_txs);
-
         [[nodiscard]]
         std::expected<PendingBlockStatus, std::string>
         get_pending_status(const std::string& chain_id,
@@ -78,15 +68,6 @@ namespace utx::app::infrastructure::deploy {
         static std::expected<utx::domain::model::SignedTransaction, std::string>
         build_signed_tx(const std::string& payload,
                         const std::string& chain_id,
-                        const infra::wallet::KeyPair& wallet);
-
-        /**
-         * Legacy signer kept temporarily for commands that still use the old
-         * sender-as-receiver convention.
-         */
-        [[nodiscard]]
-        static std::expected<utx::domain::model::SignedTransaction, std::string>
-        build_signed_tx(const std::string& payload,
                         const infra::wallet::KeyPair& wallet);
 
     private:

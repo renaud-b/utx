@@ -104,28 +104,26 @@ namespace utx::app::use_case {
                 req.commit_message = "graph update";
                 req.force_snapshot = true; // Force snapshot to update the whole graph
 
-                const auto my_address = utx::domain::model::Address(ctx_.wallet->address);
+                auto deploy_res =
+                    deploy_client.deploy(req, *ctx_.wallet);
 
-                // 🔥 PREPARE
-                auto plan_res = deploy_client.prepare(req, my_address.to_string());
-
-                if (!plan_res) {
-                    LOG_THIS_ERROR("❌ Prepare failed: {}", plan_res.error());
+                if (!deploy_res) {
+                    LOG_THIS_ERROR(
+                        "❌ Graph update failed: {}",
+                        deploy_res.error()
+                    );
                     return 1;
                 }
 
-                const auto &plan = *plan_res;
+                LOG_THIS_INFO(
+                    "✅ Finalized update of element {} on chain {}: {} = {}",
+                    element_id,
+                    chain_id,
+                    property,
+                    value
+                );
 
-                if (!plan.contains("transactions") || !plan["transactions"].is_array()) {
-                    LOG_THIS_ERROR("❌ Invalid plan");
-                    return 1;
-                }
-
-                const auto &txs = plan["transactions"];
-
-                if (txs.empty()) {
-                    LOG_THIS_WARN("⚠️ Nothing to update.");
-                    return 0;
+                return 0;
                 }
 
                 // 🔥 SIGN

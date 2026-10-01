@@ -111,14 +111,6 @@ namespace utx::app::infrastructure::deploy {
         return build_signed_tx_for_receiver(payload, chain_id, wallet);
     }
 
-    std::expected<utx::domain::model::SignedTransaction, std::string>
-    DeployClient::build_signed_tx(
-        const std::string& payload,
-        const infra::wallet::KeyPair& wallet
-    ) {
-        return build_signed_tx_for_receiver(payload, wallet.address, wallet);
-    }
-
     std::expected<DeploySubmission, std::string>
     DeployClient::submit(
         const std::string& plan_id,
@@ -203,50 +195,6 @@ namespace utx::app::infrastructure::deploy {
                 }
             }
         );
-    }
-
-    std::expected<void, std::string>
-    DeployClient::submit(
-        const std::string& plan_id,
-        const std::string& chain_id,
-        const nlohmann::json& signed_txs
-    ) {
-        httplib::Client cli(base_url_);
-        cli.set_read_timeout(60, 0);
-        cli.set_connection_timeout(10, 0);
-
-        nlohmann::json body = {
-            {"plan_id", plan_id},
-            {"chain_id", chain_id},
-            {"signed_transactions", signed_txs}
-        };
-
-        auto res = cli.Post(
-            "/api/deploy/submit",
-            body.dump(),
-            "application/json"
-        );
-
-        if (!res) {
-            return std::unexpected(
-                std::format(
-                    "HTTP error (legacy submit): {}",
-                    httplib::to_string(res.error())
-                )
-            );
-        }
-
-        if (res->status != 200) {
-            return std::unexpected(
-                std::format(
-                    "Legacy submit failed: HTTP {} - {}",
-                    res->status,
-                    res->body
-                )
-            );
-        }
-
-        return {};
     }
 
     std::expected<PendingBlockStatus, std::string>
@@ -389,11 +337,31 @@ namespace utx::app::infrastructure::deploy {
 
         const auto& plan = plan_res.value();
 
+        if (!plan.contains("plan_id") ||
+            !plan.at("plan_id").is_string()) {
+            return std::unexpected(
+                "Invalid plan: missing plan_id"
+            );
+        }
+
         if (!plan.contains("transactions") ||
             !plan.at("transactions").is_array()) {
             return std::unexpected(
                 "Invalid plan: missing transactions"
             );
+        }
+
+        const auto plan_id =
+            plan.at("plan_id").get<std::string>();
+        const auto& transactions = plan.at("transactions");
+
+        // A prepare that finds no structural change is already complete:
+        // there is nothing to admit or finalize.
+        if (transactions.empty()) {
+            return domain::DeployResult{
+                .success = true,
+                .plan_id = plan_id
+            };
         }
 
         if (!plan.contains("ring_reference") ||
@@ -405,8 +373,9 @@ namespace utx::app::infrastructure::deploy {
 
         nlohmann::json signed_txs = nlohmann::json::array();
 
-        for (const auto& tx : plan.at("transactions")) {
-            const auto payload = tx.at("payload_data").get<std::string>();
+        for (const auto& tx : transactions) {
+            const auto payload =
+                tx.at("payload_data").get<std::string>();
 
             auto signed_tx_res =
                 build_signed_tx(payload, req.chain_id, wallet);
@@ -415,11 +384,13 @@ namespace utx::app::infrastructure::deploy {
                 return std::unexpected(signed_tx_res.error());
             }
 
-            signed_txs.push_back(std::move(signed_tx_res.value()));
+            signed_txs.push_back(
+                std::move(signed_tx_res.value())
+            );
         }
 
         auto submit_res = submit(
-            plan.at("plan_id").get<std::string>(),
+            plan_id,
             req.chain_id,
             plan.at("ring_reference"),
             signed_txs
@@ -429,6 +400,19 @@ namespace utx::app::infrastructure::deploy {
             return std::unexpected(submit_res.error());
         }
 
+        // A partial admission may already have changed durable network state.
+        // Observe every admitted block before returning the admission error.
+        if (!submit_res->pending_block_ids.empty()) {
+            auto finalized = wait_for_finalization(
+                req.chain_id,
+                submit_res->pending_block_ids
+            );
+
+            if (!finalized) {
+                return std::unexpected(finalized.error());
+            }
+        }
+
         if (submit_res->admission_error) {
             return std::unexpected(
                 "Deploy was only partially queued: " +
@@ -436,7 +420,8 @@ namespace utx::app::infrastructure::deploy {
             );
         }
 
-        if (submit_res->pending_block_ids.size() != signed_txs.size()) {
+        if (submit_res->pending_block_ids.size() !=
+            signed_txs.size()) {
             return std::unexpected(
                 std::format(
                     "Deploy queued {}/{} transactions",
@@ -446,18 +431,10 @@ namespace utx::app::infrastructure::deploy {
             );
         }
 
-        auto finalized = wait_for_finalization(
-            req.chain_id,
-            submit_res->pending_block_ids
-        );
-
-        if (!finalized) {
-            return std::unexpected(finalized.error());
-        }
-
         return domain::DeployResult{
             .success = true,
-            .plan_id = plan.at("plan_id").get<std::string>()
+            .plan_id = plan_id
         };
     }
+
 }
