@@ -1,6 +1,9 @@
 #pragma once
 
+#include <algorithm>
+#include <expected>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <future>
 #include <mutex>
