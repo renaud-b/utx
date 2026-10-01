@@ -1,11 +1,13 @@
 #pragma once
 
 #include <filesystem>
-#include <vector>
-#include <string>
-#include <unordered_map>
 #include <future>
 #include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include "AbstractCommand.hpp"
 #include "common/Logger.hpp"
@@ -37,12 +39,14 @@ public:
         }
 
         if (rev_id.empty()) {
-            deploy_manifest("manifest_update");
+            if (deploy_manifest("manifest_update") != 0) {
+                return 1;
+            }
             LOG_THIS_WARN("{}ℹ️ Nothing to push.{}", domain::color::cyan, domain::color::reset);
             return 0;
         }
 
-        std::filesystem::path rev_path =
+        const std::filesystem::path rev_path =
             ctx_.root / infrastructure::deploy::kUtxDir / "revisions" /
             ("rev_" + rev_id.substr(0, 12) + ".utx");
 
@@ -53,6 +57,8 @@ public:
 
         struct ChainWork {
             std::string plan_id;
+            nlohmann::json ring_reference;
+            std::string content_hash;
             std::vector<std::string> payloads;
         };
 
@@ -60,57 +66,90 @@ public:
 
         std::ifstream infile(rev_path);
         std::string line;
-
         std::string current_chain;
-        std::string current_plan;
 
         while (std::getline(infile, line)) {
-            if (line.empty()) continue;
+            if (line.empty()) {
+                continue;
+            }
 
             if (line.starts_with("CHAIN:")) {
                 current_chain = line.substr(6);
                 continue;
             }
 
-            if (line.starts_with("PLAN:")) {
-                current_plan = line.substr(5);
-                continue;
-            }
-
-            if (current_chain.empty() || current_plan.empty()) {
-                LOG_THIS_ERROR("❌ Malformed revision file");
+            if (current_chain.empty()) {
+                LOG_THIS_ERROR("❌ Malformed revision file: metadata without CHAIN");
                 return 1;
             }
 
             auto &entry = work_map[current_chain];
-            entry.plan_id = current_plan;
+
+            if (line.starts_with("PLAN:")) {
+                entry.plan_id = line.substr(5);
+                continue;
+            }
+
+            if (line.starts_with("RING:")) {
+                try {
+                    entry.ring_reference = nlohmann::json::parse(line.substr(5));
+                } catch (const std::exception &e) {
+                    LOG_THIS_ERROR("❌ Invalid ring reference for chain {}: {}", current_chain, e.what());
+                    return 1;
+                }
+                continue;
+            }
+
+            if (line.starts_with("HASH:")) {
+                entry.content_hash = line.substr(5);
+                continue;
+            }
+
             entry.payloads.push_back(line);
+        }
+
+        for (const auto &[chain_id, work] : work_map) {
+            if (work.plan_id.empty() ||
+                work.ring_reference.is_null() ||
+                !work.ring_reference.is_object() ||
+                work.content_hash.empty() ||
+                work.payloads.empty()) {
+                LOG_THIS_ERROR(
+                    "❌ Revision for chain {} is missing async deploy metadata. "
+                    "Re-create the revision with the current utx version.",
+                    chain_id
+                );
+                return 1;
+            }
         }
 
         std::mutex config_mutex;
         std::mutex success_mutex;
-
         size_t success = 0;
 
         utx::common::ThreadPool pool(kMaxThreads);
         std::vector<std::future<void>> futures;
 
-        for (auto &[chain_id, work] : work_map) {
-
+        for (const auto &[chain_id, work] : work_map) {
             futures.emplace_back(
-                pool.enqueue([&, chain_id, &work]() {
-
+                pool.enqueue([&, chain_id, work]() {
                     auto local_client = ctx_.deploy_client();
-
                     nlohmann::json signed_txs = nlohmann::json::array();
 
                     size_t payload_size = 0;
                     for (const auto &payload : work.payloads) {
-                        auto signed_res =
-                            local_client.build_signed_tx(payload, *ctx_.wallet);
+                        auto signed_res = local_client.build_signed_tx(
+                            payload,
+                            chain_id,
+                            *ctx_.wallet
+                        );
 
                         if (!signed_res) {
-                            LOG_THIS_ERROR("❌ Signing failed ({}): {}", chain_id, signed_res.error());
+                            LOG_THIS_ERROR(
+                                "❌ Signing failed ({}): {}",
+                                chain_id,
+                                signed_res.error()
+                            );
                             return;
                         }
 
@@ -118,27 +157,75 @@ public:
                         payload_size += payload.size();
                     }
 
-                    auto submit_res =
-                        local_client.submit(work.plan_id, chain_id, signed_txs);
+                    auto submit_res = local_client.submit(
+                        work.plan_id,
+                        chain_id,
+                        work.ring_reference,
+                        signed_txs
+                    );
 
                     if (!submit_res) {
-                        LOG_THIS_ERROR("❌ Submit failed for {}: {}", chain_id, submit_res.error());
+                        LOG_THIS_ERROR(
+                            "❌ Submit failed for {}: {}",
+                            chain_id,
+                            submit_res.error()
+                        );
                         return;
                     }
 
+                    if (submit_res->admission_error) {
+                        LOG_THIS_ERROR(
+                            "❌ Deploy only partially queued for {}: {}",
+                            chain_id,
+                            *submit_res->admission_error
+                        );
+                        return;
+                    }
 
-                    LOG_THIS_INFO("✅ Deploy successful for chain {}. Plan ID: {}, Payload size: {} bytes",
-                                  chain_id, work.plan_id, payload_size);
+                    if (submit_res->pending_block_ids.size() != signed_txs.size()) {
+                        LOG_THIS_ERROR(
+                            "❌ Deploy queued {}/{} transactions for {}",
+                            submit_res->pending_block_ids.size(),
+                            signed_txs.size(),
+                            chain_id
+                        );
+                        return;
+                    }
+
+                    LOG_THIS_INFO(
+                        "⏳ Deploy queued for chain {}. Plan ID: {}, Transactions: {}, Payload size: {} bytes",
+                        chain_id,
+                        work.plan_id,
+                        submit_res->pending_block_ids.size(),
+                        payload_size
+                    );
+
+                    auto finalized = local_client.wait_for_finalization(
+                        chain_id,
+                        submit_res->pending_block_ids
+                    );
+
+                    if (!finalized) {
+                        LOG_THIS_ERROR(
+                            "❌ Deploy did not finalize for {}: {}",
+                            chain_id,
+                            finalized.error()
+                        );
+                        return;
+                    }
+
+                    LOG_THIS_INFO(
+                        "✅ Deploy finalized for chain {}. Plan ID: {}",
+                        chain_id,
+                        work.plan_id
+                    );
 
                     {
                         std::lock_guard<std::mutex> lock(config_mutex);
 
                         for (auto &t : ctx_.deploy_config.targets) {
                             if (t.chain == chain_id) {
-                                const std::string content =
-                                    common::io::read_file((ctx_.root / t.path).string());
-
-                                t.last_synced_hash = common::md5_hex(content);
+                                t.last_synced_hash = work.content_hash;
                                 t.last_revision_id.clear();
                             }
                         }
@@ -146,29 +233,58 @@ public:
 
                     {
                         std::lock_guard<std::mutex> lock(success_mutex);
-                        success++;
+                        ++success;
                     }
                 })
             );
         }
 
-        // attendre toutes les tâches
         for (auto &f : futures) {
             f.get();
         }
 
-        infrastructure::deploy::DeployConfigManager::save_deploy_config_atomic(
-            ctx_.root,
-            ctx_.deploy_config
-        );
+        const auto saved =
+            infrastructure::deploy::DeployConfigManager::save_deploy_config_atomic(
+                ctx_.root,
+                ctx_.deploy_config
+            );
 
-        LOG_THIS_INFO("🎯 Push complete: {}/{} chains", success, work_map.size());
-
-        if (deploy_manifest(rev_id)) {
-            LOG_THIS_INFO("🎯 Manifest update complete.{}", domain::color::green, domain::color::reset);
+        if (!saved) {
+            LOG_THIS_ERROR(
+                "{}❌ Failed to persist deploy config: {}{}",
+                domain::color::red,
+                saved.error(),
+                domain::color::reset
+            );
+            return 1;
         }
 
-        return success == work_map.size() ? 0 : 1;
+        LOG_THIS_INFO(
+            "🎯 Push finalized: {}/{} chains",
+            success,
+            work_map.size()
+        );
+
+        if (success != work_map.size()) {
+            LOG_THIS_WARN(
+                "{}⚠️ Revision remains partially pending.{}",
+                domain::color::yellow,
+                domain::color::reset
+            );
+            return 1;
+        }
+
+        if (deploy_manifest(rev_id) != 0) {
+            return 1;
+        }
+
+        LOG_THIS_INFO(
+            "{}🎯 Manifest update finalized.{}",
+            domain::color::green,
+            domain::color::reset
+        );
+
+        return 0;
     }
 
     int deploy_manifest(const std::string &rev_id) {
@@ -179,45 +295,62 @@ public:
             return 0;
         }
 
-        LOG_THIS_INFO("{}🚀 Deploying manifest update on chain {}...{}",
-                      domain::color::green,
-                      deploy_chain_address,
-                      domain::color::reset);
+        LOG_THIS_INFO(
+            "{}🚀 Deploying manifest update on chain {}...{}",
+            domain::color::green,
+            deploy_chain_address,
+            domain::color::reset
+        );
 
         try {
             const auto deploy_json =
-                utx::common::io::read_file((ctx_.root / infrastructure::deploy::kDeployFile).string());
+                utx::common::io::read_file(
+                    (ctx_.root / infrastructure::deploy::kDeployFile).string()
+                );
 
-            auto g = ctx_.graph_parser.make_deploy_graph(deploy_chain_address, deploy_json);
+            auto g = ctx_.graph_parser.make_deploy_graph(
+                deploy_chain_address,
+                deploy_json
+            );
 
             domain::DeployRequest req;
             req.chain_id = deploy_chain_address;
             req.file_path = infrastructure::deploy::kDeployFile;
             req.content = g->to_json_string();
-            req.commit_message = "Update deploy manifest on revision " + rev_id;
+            req.commit_message =
+                "Update deploy manifest on revision " + rev_id;
 
-            auto deploy_res = deploy_client.deploy(req, *ctx_.wallet);
+            auto deploy_res = deploy_client.deploy(
+                req,
+                *ctx_.wallet
+            );
 
             if (!deploy_res) {
-                LOG_THIS_ERROR("{}❌ Deploy manifest prepare failed: {}{}",
-                               domain::color::red,
-                               deploy_res.error(),
-                               domain::color::reset);
+                LOG_THIS_ERROR(
+                    "{}❌ Deploy manifest failed: {}{}",
+                    domain::color::red,
+                    deploy_res.error(),
+                    domain::color::reset
+                );
                 return 1;
             }
 
-            LOG_THIS_INFO("{}✅ Deploy manifest updated on-chain.{}",
-                          domain::color::green,
-                          domain::color::reset);
+            LOG_THIS_INFO(
+                "{}✅ Deploy manifest finalized on-chain.{}",
+                domain::color::green,
+                domain::color::reset
+            );
 
+            return 0;
         } catch (const std::exception &e) {
-            LOG_THIS_ERROR("{}❌ Manifest push error: {}{}",
-                           domain::color::red,
-                           e.what(),
-                           domain::color::reset);
+            LOG_THIS_ERROR(
+                "{}❌ Manifest push error: {}{}",
+                domain::color::red,
+                e.what(),
+                domain::color::reset
+            );
+            return 1;
         }
-
-        return 0;
     }
 
 private:

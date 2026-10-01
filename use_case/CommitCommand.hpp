@@ -124,6 +124,35 @@ public:
 
                     const auto &txs = plan["transactions"];
 
+                    if (!plan.contains("ring_reference") ||
+                        !plan["ring_reference"].is_object()) {
+                        LOG_THIS_ERROR(
+                            "  ❌ Invalid plan returned by node for {}: missing ring_reference",
+                            target.path
+                        );
+                        return;
+                    }
+
+                    if (!plan.contains("content_hash") ||
+                        !plan["content_hash"].is_string()) {
+                        LOG_THIS_ERROR(
+                            "  ❌ Invalid plan returned by node for {}: missing content_hash",
+                            target.path
+                        );
+                        return;
+                    }
+
+                    const auto plan_content_hash =
+                        plan["content_hash"].get<std::string>();
+
+                    if (plan_content_hash != current_hash) {
+                        LOG_THIS_ERROR(
+                            "  ❌ Prepared content hash mismatch for {}",
+                            target.path
+                        );
+                        return;
+                    }
+
                     if (txs.empty()) {
                         std::lock_guard lock(global_mutex);
                         for (auto &t : ctx_.deploy_config.targets)
@@ -154,6 +183,8 @@ public:
 
                         global_revision_content += "CHAIN:" + target.chain + "\n";
                         global_revision_content += "PLAN:" + plan["plan_id"].get<std::string>() + "\n";
+                        global_revision_content += "RING:" + plan["ring_reference"].dump() + "\n";
+                        global_revision_content += "HASH:" + plan_content_hash + "\n";
                         global_revision_content += chain_segment + "\n";
 
                         total_blocks_emitted += static_cast<uint8_t>(txs.size());
