@@ -75,6 +75,8 @@ TEST(DeployClientTest, DeploySubmitsRingReferenceAndWaitsForFinalization) {
 
             EXPECT_EQ(request.at("chain_id"), "chain-123");
             EXPECT_EQ(request.at("content"), "hello");
+            EXPECT_EQ(request.at("kind"), "identity");
+            EXPECT_EQ(request.at("projector"), "IdentityProjector");
 
             res.set_content(
                 nlohmann::json{
@@ -137,6 +139,8 @@ TEST(DeployClientTest, DeploySubmitsRingReferenceAndWaitsForFinalization) {
     request.chain_id = "chain-123";
     request.file_path = "index.html";
     request.content = "hello";
+    request.kind = "identity";
+    request.projector = "IdentityProjector";
     request.commit_message = "test deploy";
 
     const auto result = client.deploy(request, wallet);

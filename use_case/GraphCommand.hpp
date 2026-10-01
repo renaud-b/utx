@@ -2,7 +2,6 @@
 
 #include "AbstractCommand.hpp"
 #include "domain/graph/GraphElement.hpp"
-#include "infrastructure/chain/TxManager.hpp"
 
 namespace utx::app::use_case {
     /** cmd_graph : Manage Utopixia graphs.

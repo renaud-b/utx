@@ -70,7 +70,6 @@ int main(int argc, char **argv) {
         ctx.network_client = utx::app::infrastructure::chain::NetworkClient{
             ctx.project_config.api_target
         };
-        ctx.tx_manager = utx::app::infrastructure::chain::TxManager{};
         ctx.graph_parser = utx::app::infrastructure::parser::GraphParser{};
         ctx.ignore_manager = utx::app::infrastructure::ignore::IgnoreManager{};
         ctx.project_label = utx::app::infrastructure::deploy::DeployConfigManager::project_label_from_root(ctx.root);

@@ -133,7 +133,6 @@ add_tree_sitter_grammar(tree-sitter-go ${tree_sitter_go_grammar_SOURCE_DIR})
 add_executable(utx
         main.cpp
         domain/Types.cpp
-        infrastructure/chain/TxManager.cpp
         infrastructure/parser/GraphParser.cpp
         common/Uuid.cpp
         common/Hash.cpp

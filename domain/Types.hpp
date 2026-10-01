@@ -25,26 +25,6 @@ namespace utx::app::domain {
         std::string plan_id;
     };
 
-    class IDeployClient {
-        virtual ~IDeployClient() = default;
-
-        virtual std::expected<DeployResult, std::string>
-        deploy(const DeployRequest& req,
-               const infra::wallet::KeyPair& wallet) = 0;
-
-        virtual std::expected<nlohmann::json, std::string>
-        prepare(const DeployRequest& req, const std::string& sender) = 0;
-
-        virtual std::expected<void, std::string>
-        submit(const std::string& plan_id,
-               const std::string& chain_id,
-               const nlohmann::json& signed_txs) = 0;
-
-        virtual std::expected<utx::domain::model::SignedTransaction, std::string>
-        build_signed_tx(const std::string& payload,
-            const infra::wallet::KeyPair& wallet) = 0;
-    };
-
     /** Enumeration of target kinds for deployment. */
     enum class TargetKind { Html, Js, Css, Markdown, Go, Graph, Identity, Cpp, Json };
     /** Convert a TargetKind enum value to its string representation.

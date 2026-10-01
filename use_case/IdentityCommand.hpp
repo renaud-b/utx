@@ -9,7 +9,6 @@
 #include "domain/Types.hpp"
 #include "infrastructure/deploy_config/DeployConfig.hpp"
 #include "infrastructure/chain/NetworkClient.hpp"
-#include "infrastructure/chain/TxManager.hpp"
 
 namespace utx::app::use_case {
     /** Marker interface for command objects in the application domain. */
@@ -170,6 +169,7 @@ namespace utx::app::use_case {
             domain::DeployRequest req;
             req.chain_id = my_addr.to_string();
             req.file_path = "identity";
+            req.kind = "identity";
             req.projector = "IdentityProjector";
             req.content = identity_content.dump();
             req.commit_message = "Create identity";

@@ -24,12 +24,11 @@ namespace utx::app::use_case {
         int execute(const std::vector<std::string>& args) override {
             if (args.size() < 3 || args[2] == "--help" || args[2] == "-h") {
                 LOG_THIS_INFO(
-                    "Usage: utx add <path> [--chain <id>] [--kind <kind>] [--force] [--label <label>] [--labels <label1,label2,...>]");
+                    "Usage: utx add <path> [--chain <id>] [--kind <kind>] [--force]");
                 LOG_THIS_INFO("  --chain <id>       : Specify the target chain ID (optional).");
-                LOG_THIS_INFO("  --kind <kind>      : Specify the target kind (Graph, Html, Js, Cpp, Css, Markdown, Go).");
+                LOG_THIS_INFO("  --kind <kind>      : Specify the target kind (Graph, Html, Js, Cpp, Css, Markdown).");
                 LOG_THIS_INFO("  --force            : Force adding even if ignored by .utxignore.");
-                LOG_THIS_INFO("  --label <label>     : Add a genesis label to the target (can be used multiple times).");
-                LOG_THIS_INFO("  --labels <label1,label2,...> : Add multiple genesis labels (comma-separated).");
+                LOG_THIS_INFO("  Note: genesis labels and Go deploys are not supported by the current V1 node deploy protocol.");
                 return 1;
             }
 
@@ -37,33 +36,24 @@ namespace utx::app::use_case {
 
             std::optional<std::string> chain_opt;
             std::optional<domain::TargetKind> kind_opt;
-            std::vector<std::string> genesis_labels;
-
 
             for (size_t i = 2; i < args.size(); ++i) {
-                if (args[i] == "--force") force = true;
-                if (args[i] == "--label" && i + 1 < args.size()) {
-                    genesis_labels.push_back(args[++i]);
+                if (args[i] == "--force") {
+                    force = true;
                     continue;
                 }
-                if (args[i] == "--labels" && i + 1 < args.size()) {
-                    // comma-separated
-                    std::string s = args[++i];
-                    size_t pos = 0;
-                    while (pos < s.size()) {
-                        auto comma = s.find(',', pos);
-                        auto part = s.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
-                        // trim (simple)
-                        while (!part.empty() && part.front() == ' ') part.erase(0, 1);
-                        while (!part.empty() && part.back() == ' ') part.pop_back();
-                        if (!part.empty()) genesis_labels.push_back(part);
-                        if (comma == std::string::npos) break;
-                        pos = comma + 1;
-                    }
-                    continue;
+                if (args[i] == "--label" || args[i] == "--labels") {
+                    LOG_THIS_ERROR(
+                        "❌ Genesis labels are not supported by the current V1 node deploy protocol."
+                    );
+                    LOG_THIS_INFO(
+                        "   No target was added. Remove the label option and retry."
+                    );
+                    return 1;
                 }
                 if (args[i] == "--chain" && i + 1 < args.size()) {
                     chain_opt = args[++i];
+                    continue;
                 }
                 if (args[i] == "--kind" && i + 1 < args.size()) {
                     if (auto k = domain::parse_kind(args[++i])) {
@@ -72,6 +62,12 @@ namespace utx::app::use_case {
                 }
             }
 
+            if (kind_opt == domain::TargetKind::Go) {
+                LOG_THIS_ERROR(
+                    "❌ Go deploys are not supported by the current V1 node deploy planner."
+                );
+                return 1;
+            }
 
             fs::path target_path = fs::absolute(args[2]);
             if (!fs::exists(target_path)) {
@@ -92,6 +88,7 @@ namespace utx::app::use_case {
             size_t added = 0;
             size_t skipped_ignored = 0;
             size_t skipped_non_regular = 0;
+            size_t unsupported_go = 0;
 
             // Lambda qui ajoute un fichier unique
             auto add_one_file = [&](const fs::path &file_path) {
@@ -114,6 +111,15 @@ namespace utx::app::use_case {
                     kind = deduce_kind_from_extension(file_path);
                 }
 
+                if (kind == domain::TargetKind::Go) {
+                    LOG_THIS_ERROR(
+                        "❌ Cannot add {}: Go deploys are not supported by the current V1 node deploy planner.",
+                        target_file_rel_path
+                    );
+                    unsupported_go++;
+                    return;
+                }
+
                 // Try to retrieve previous chain id in deploy config
                 const auto it = std::ranges::find_if(ctx_.deploy_config.targets,
                                                      [&](const domain::DeployTarget &t) {
@@ -133,11 +139,11 @@ namespace utx::app::use_case {
                 } else {
                     chain_id = utx::common::generate_uuid_v7().to_string();
                     LOG_THIS_INFO("{}ℹ️ Generated new chain id for {}: {}{}",
-                                  domain::color::cyan, target_file_rel_path, *chain_opt,
+                                  domain::color::cyan, target_file_rel_path, chain_id,
                                   domain::color::reset);
                 }
 
-                upsert_target(ctx_.deploy_config, target_file_rel_path, chain_id, kind, "", genesis_labels);
+                upsert_target(ctx_.deploy_config, target_file_rel_path, chain_id, kind, "");
                 added++;
 
                 LOG_THIS_INFO("  {}+{} {} -> chain:{} (kind:{}){}",
@@ -183,6 +189,14 @@ namespace utx::app::use_case {
                 return 1;
             }
 
+            if (unsupported_go > 0) {
+                LOG_THIS_ERROR(
+                    "❌ Add aborted: {} Go target(s) are unsupported by the current V1 node deploy planner.",
+                    unsupported_go
+                );
+                return 1;
+            }
+
             if (added == 0) {
                 LOG_THIS_WARN("{}⚠️ Nothing added. (ignored: {}, non-regular: {}){}",
                               domain::color::yellow, skipped_ignored, skipped_non_regular,
@@ -221,17 +235,18 @@ namespace utx::app::use_case {
                                   const std::string &rel_path,
                                   const std::string &chain_id,
                                   domain::TargetKind kind,
-                                  const std::string &file_hash,
-                                  const std::vector<std::string> &genesis_labels) {
-            auto it = std::ranges::find_if(deploy_config.targets, [&](auto &t) { return t.path == rel_path; });
+                                  const std::string &file_hash) {
+            auto it = std::ranges::find_if(
+                deploy_config.targets,
+                [&](auto &t) {
+                    return t.path == rel_path;
+                }
+            );
+
             if (it != deploy_config.targets.end()) {
                 it->chain = chain_id;
                 it->kind = kind;
                 it->last_synced_hash = file_hash;
-                // only update if user provided labels in this add command
-                if (!genesis_labels.empty()) {
-                    it->genesis_labels = genesis_labels;
-                }
             } else {
                 domain::DeployTarget t;
                 t.path = rel_path;
@@ -239,11 +254,9 @@ namespace utx::app::use_case {
                 t.kind = kind;
                 t.last_revision_id = "";
                 t.last_synced_hash = file_hash;
-                t.genesis_labels = genesis_labels;
                 deploy_config.targets.push_back(std::move(t));
             }
         }
-
 
         infrastructure::context::AppContext ctx_;
     };

@@ -27,9 +27,6 @@ namespace utx::app::infrastructure::chain {
 
     struct NetworkClient {
         std::string target;
-        infra::crypto::OpenSSLCryptoService crypto;
-
-
         [[nodiscard]]
         std::optional<Graph> get_graph(const Address &addr) const {
             httplib::Client cli(target);
@@ -160,56 +157,5 @@ namespace utx::app::infrastructure::chain {
             return std::unexpected("Failed to connect to node.");
         }
 
-        [[nodiscard]]
-        bool send_block(AtomicBlock &block, const utx::infra::wallet::KeyPair &kp) const {
-            // Signature du bloc avant envoi
-            block.hash = crypto.calculate_hash(block);
-            block.signature = Signature(utx::infra::wallet::WalletHelper::sign_message(
-                kp.private_key_hex, block.hash.to_string()));
-
-            httplib::Client cli(target);
-            cli.set_read_timeout(20, 0);
-            cli.set_connection_timeout(10, 0);
-            auto res = cli.Post("/block", json(block).dump(), "application/json");
-            if (res && (res->status == 200 || res->status == 409)) {
-                return true;
-            }
-            if (res) {
-                LOG_THIS_ERROR("{}❌ Node rejected block (status: {}).", color::red, res->status);
-                LOG_THIS_ERROR("{}Raw error message: {}", color::red, res->body);
-            } else {
-                const auto err = httplib::to_string(res.error());
-                LOG_THIS_ERROR("{}❌ Failed to connect to node: {}.", color::red, err);
-            }
-            return false;
-        }
-
-        [[nodiscard]]
-        bool send_transaction(const Address &chain_address, SignedTransaction &tx,
-                              const utx::infra::wallet::KeyPair &kp) const {
-            // Signature de la transaction avant envoi
-            const auto serialized_tx = tx.serialize_for_signing();
-            const auto tx_hash = utx::common::sha256_hex(serialized_tx);
-
-            tx.signature = Signature(utx::infra::wallet::WalletHelper::sign_message(
-                kp.private_key_hex, tx_hash));
-
-            httplib::Client cli(target);
-            cli.set_read_timeout(20, 0);
-            cli.set_connection_timeout(10, 0);
-            auto res = cli.Post(std::format("/chain/{}/transaction", chain_address.to_string()), json(tx).dump(),
-                                "application/json");
-            if (res && (res->status == 200 || res->status == 409)) {
-                return true;
-            }
-            if (res) {
-                LOG_THIS_ERROR("{}❌ Node rejected transaction (status: {}).", color::red, res->status);
-                LOG_THIS_ERROR("{}Raw error message: {}", color::red, res->body);
-            } else {
-                const auto err = httplib::to_string(res.error());
-                LOG_THIS_ERROR("{}❌ Failed to connect to node: {}.", color::red, err);
-            }
-            return false;
-        }
     };
 }
