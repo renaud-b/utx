@@ -65,13 +65,18 @@ namespace utx::app::use_case {
             }
             if (subcmd == "update") {
                 if (!ctx_.wallet) {
-                    LOG_THIS_ERROR("{}❌ No wallet configured.{}", utx::app::domain::color::red,
-                                   utx::app::domain::color::reset);
+                    LOG_THIS_ERROR(
+                        "{}❌ No wallet configured.{}",
+                        utx::app::domain::color::red,
+                        utx::app::domain::color::reset
+                    );
                     return 1;
                 }
 
                 if (args.size() < 7) {
-                    LOG_THIS_INFO("Usage: utx graph update <chain_id> <element_id> <property> <value>");
+                    LOG_THIS_INFO(
+                        "Usage: utx graph update <chain_id> <element_id> <property> <value>"
+                    );
                     return 1;
                 }
 
@@ -80,21 +85,32 @@ namespace utx::app::use_case {
                 const std::string property = args[5];
                 const std::string value = args[6];
 
-                auto deploy_client = ctx_.deploy_client();
+                auto graph_state =
+                    ctx_.network_client.fetch_graph_state(chain_id);
 
-                auto graph_state = ctx_.network_client.fetch_graph_state(chain_id);
                 if (!graph_state) {
-                    LOG_THIS_ERROR("❌ Could not fetch graph for chain ID: {}", chain_id);
+                    LOG_THIS_ERROR(
+                        "❌ Could not fetch graph for chain ID: {}",
+                        chain_id
+                    );
                     return 1;
                 }
-                auto target_element = graph_state->find_element(element_id);
+
+                auto target_element =
+                    graph_state->find_element(element_id);
+
                 if (!target_element) {
-                    LOG_THIS_ERROR("❌ Element with ID {} not found in graph {}.", element_id, chain_id);
+                    LOG_THIS_ERROR(
+                        "❌ Element with ID {} not found in graph {}.",
+                        element_id,
+                        chain_id
+                    );
                     return 1;
                 }
 
                 target_element->set_property(property, value);
-                nlohmann::json update_content = graph_state->to_json();
+                nlohmann::json update_content =
+                    graph_state->to_json();
 
                 domain::DeployRequest req;
                 req.chain_id = chain_id;
@@ -102,60 +118,27 @@ namespace utx::app::use_case {
                 req.kind = "graph";
                 req.content = update_content.dump();
                 req.commit_message = "graph update";
-                req.force_snapshot = true; // Force snapshot to update the whole graph
+                req.force_snapshot = true;
 
-                const auto my_address = utx::domain::model::Address(ctx_.wallet->address);
+                auto deploy_client = ctx_.deploy_client();
+                auto deploy_res =
+                    deploy_client.deploy(req, *ctx_.wallet);
 
-                // 🔥 PREPARE
-                auto plan_res = deploy_client.prepare(req, my_address.to_string());
-
-                if (!plan_res) {
-                    LOG_THIS_ERROR("❌ Prepare failed: {}", plan_res.error());
+                if (!deploy_res) {
+                    LOG_THIS_ERROR(
+                        "❌ Graph update failed: {}",
+                        deploy_res.error()
+                    );
                     return 1;
                 }
 
-                const auto &plan = *plan_res;
-
-                if (!plan.contains("transactions") || !plan["transactions"].is_array()) {
-                    LOG_THIS_ERROR("❌ Invalid plan");
-                    return 1;
-                }
-
-                const auto &txs = plan["transactions"];
-
-                if (txs.empty()) {
-                    LOG_THIS_WARN("⚠️ Nothing to update.");
-                    return 0;
-                }
-
-                // 🔥 SIGN
-                nlohmann::json signed_txs = nlohmann::json::array();
-
-                for (const auto &tx: txs) {
-                    const std::string payload = tx["payload_data"].get<std::string>();
-
-                    auto signed_res =
-                            deploy_client.build_signed_tx(payload, *ctx_.wallet);
-
-                    if (!signed_res) {
-                        LOG_THIS_ERROR("❌ Signing failed: {}", signed_res.error());
-                        return 1;
-                    }
-
-                    signed_txs.push_back(signed_res.value());
-                }
-
-                // 🔥 SUBMIT
-                auto submit_res =
-                        deploy_client.submit(plan["plan_id"], chain_id, signed_txs);
-
-                if (!submit_res) {
-                    LOG_THIS_ERROR("❌ Submit failed: {}", submit_res.error());
-                    return 1;
-                }
-
-                LOG_THIS_INFO("✅ Updated element {} on chain {}: {} = {}",
-                              element_id, chain_id, property, value);
+                LOG_THIS_INFO(
+                    "✅ Finalized update of element {} on chain {}: {} = {}",
+                    element_id,
+                    chain_id,
+                    property,
+                    value
+                );
 
                 return 0;
             }

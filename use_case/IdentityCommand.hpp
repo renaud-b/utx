@@ -1,6 +1,8 @@
 #pragma once
 
+#include <expected>
 #include <filesystem>
+#include <fstream>
 #include "AbstractCommand.hpp"
 #include "common/Logger.hpp"
 
@@ -86,8 +88,8 @@ namespace utx::app::use_case {
                 return 1;
             }
 
-            std::string wallet_out = args[3];
-            std::string pseudo = args[4];
+            const std::filesystem::path wallet_out = args[3];
+            const std::string pseudo = args[4];
 
             std::string target = "127.0.0.1:8080";
             if (!cfg.api_target.empty()) {
@@ -95,114 +97,159 @@ namespace utx::app::use_case {
             }
 
             for (size_t i = 4; i < args.size(); ++i) {
-                if (args[i] == "--target" && i + 1 < args.size())
+                if (args[i] == "--target" && i + 1 < args.size()) {
                     target = args[++i];
+                }
             }
 
             infrastructure::chain::NetworkClient net{target};
 
-            // 🔑 Wallet
+            const bool wallet_already_exists =
+                std::filesystem::exists(wallet_out);
+
             auto kp = infra::wallet::WalletHelper::generate_keypair();
 
-            if (std::filesystem::exists(wallet_out)) {
-                auto r = infrastructure::deploy::DeployConfigManager::load_wallet_from_config(
-                    domain::ProjectConfig{.wallet_path = wallet_out});
+            if (wallet_already_exists) {
+                auto r =
+                    infrastructure::deploy::DeployConfigManager::load_wallet_from_config(
+                        domain::ProjectConfig{
+                            .wallet_path = wallet_out.string()
+                        }
+                    );
 
                 if (!r) {
-                    LOG_THIS_ERROR("❌ Wallet exists but cannot be loaded: {}", r.error());
+                    LOG_THIS_ERROR(
+                        "❌ Wallet exists but cannot be loaded: {}",
+                        r.error()
+                    );
                     return 1;
                 }
 
                 kp = *r;
+            } else {
+                auto saved = save_wallet_atomic(wallet_out, kp);
+                if (!saved) {
+                    LOG_THIS_ERROR(
+                        "❌ Failed to persist wallet before deploy: {}",
+                        saved.error()
+                    );
+                    return 1;
+                }
+
+                LOG_THIS_INFO(
+                    "🔐 Wallet saved to {} before network admission.",
+                    wallet_out.string()
+                );
             }
+
+            cfg.wallet_path =
+                std::filesystem::absolute(wallet_out).string();
+            cfg.api_target = target;
+            infrastructure::deploy::save_local_config(ctx_.root, cfg);
 
             utx::domain::model::Address my_addr(kp.address);
 
             LOG_THIS_INFO("🧠 Checking existing identity graph...");
 
-            // 🔥 Fetch graph (nouvelle logique)
             auto graph_opt = net.get_graph(my_addr);
 
             if (graph_opt) {
                 LOG_THIS_INFO("ℹ️ Identity already exists on network.");
             } else {
                 LOG_THIS_INFO("🛠️ Identity will be created.");
-                graph_opt = std::optional<utx::domain::graph::Graph>(common::UUID(my_addr.to_string()));
+                graph_opt = std::optional<utx::domain::graph::Graph>(
+                    common::UUID(my_addr.to_string())
+                );
             }
 
-            // 🔥 Build minimal "content"
             graph_opt->root()->set_property("user.pseudo", pseudo);
             nlohmann::json identity_content = graph_opt->to_json();
 
-            auto deploy_client = ctx_.deploy_client();
+            infrastructure::deploy::DeployClient deploy_client{target};
 
             domain::DeployRequest req;
             req.chain_id = my_addr.to_string();
             req.file_path = "identity";
-            req.projector = "IdentityProjector"; // ou to_string(TargetKind::Identity)
+            req.projector = "IdentityProjector";
             req.content = identity_content.dump();
             req.commit_message = "Create identity";
             req.force_snapshot = true;
 
-            // 🔥 PREPARE (node = brain)
-            auto plan_res = deploy_client.prepare(req, my_addr.to_string());
-
-            if (!plan_res) {
-                LOG_THIS_ERROR("❌ Deploy prepare failed: {}", plan_res.error());
+            auto deploy_res = deploy_client.deploy(req, kp);
+            if (!deploy_res) {
+                LOG_THIS_ERROR(
+                    "❌ Identity deploy failed: {}",
+                    deploy_res.error()
+                );
+                LOG_THIS_WARN(
+                    "ℹ️ Wallet remains stored at {} so the operation can be retried safely.",
+                    wallet_out.string()
+                );
                 return 1;
             }
 
-            const auto &plan = *plan_res;
-
-            if (!plan.contains("transactions") || !plan["transactions"].is_array()) {
-                LOG_THIS_ERROR("❌ Invalid plan returned by node");
-                return 1;
-            }
-
-            const auto &txs = plan["transactions"];
-
-            if (txs.empty()) {
-                LOG_THIS_WARN("⚠️ Nothing to deploy.");
-                return 0;
-            }
-
-            // 🔥 SIGN
-            nlohmann::json signed_txs = nlohmann::json::array();
-
-            for (const auto &tx: txs) {
-                const std::string payload = tx["payload_data"].get<std::string>();
-
-                auto signed_res =
-                        deploy_client.build_signed_tx(payload, kp);
-
-                if (!signed_res) {
-                    LOG_THIS_ERROR("❌ Signing failed: {}", signed_res.error());
-                    return 1;
-                }
-
-                signed_txs.push_back(signed_res.value());
-            }
-
-            // 🔥 SUBMIT
-            auto submit_res =
-                    deploy_client.submit(plan["plan_id"], my_addr.to_string(), signed_txs);
-
-            if (!submit_res) {
-                LOG_THIS_ERROR("❌ Submit failed: {}", submit_res.error());
-                return 1;
-            }
-
-            // 💾 Save wallet
-            std::ofstream f(wallet_out);
-            f << json(kp).dump(4);
-
-            cfg.wallet_path = std::filesystem::absolute(wallet_out).string();
-            cfg.api_target = target;
-            ctx_.save_local_config();
-
-            LOG_THIS_INFO("✅ Identity deployed and saved to {}!", wallet_out);
+            LOG_THIS_INFO(
+                "✅ Identity finalized and wallet saved to {}!",
+                wallet_out.string()
+            );
 
             return 0;
+        }
+
+        static std::expected<void, std::string> save_wallet_atomic(
+            const std::filesystem::path &wallet_path,
+            const infra::wallet::KeyPair &kp
+        ) {
+            try {
+                const auto parent = wallet_path.parent_path();
+                if (!parent.empty()) {
+                    std::filesystem::create_directories(parent);
+                }
+
+                const auto tmp =
+                    std::filesystem::path(wallet_path.string() + ".tmp");
+
+                {
+                    std::ofstream out(tmp, std::ios::trunc);
+                    if (!out) {
+                        return std::unexpected(
+                            "cannot open temporary wallet file " +
+                            tmp.string()
+                        );
+                    }
+
+                    out << json(kp).dump(4);
+                    out.flush();
+
+                    if (!out) {
+                        return std::unexpected(
+                            "cannot write temporary wallet file " +
+                            tmp.string()
+                        );
+                    }
+                }
+
+                std::error_code ec;
+                std::filesystem::rename(tmp, wallet_path, ec);
+                if (ec) {
+                    std::error_code remove_ec;
+                    std::filesystem::remove(wallet_path, remove_ec);
+                    ec.clear();
+                    std::filesystem::rename(tmp, wallet_path, ec);
+                }
+
+                if (ec) {
+                    std::error_code cleanup_ec;
+                    std::filesystem::remove(tmp, cleanup_ec);
+                    return std::unexpected(
+                        "cannot replace wallet file: " + ec.message()
+                    );
+                }
+
+                return {};
+            } catch (const std::exception &e) {
+                return std::unexpected(e.what());
+            }
         }
 
         static std::string identity_config_to_b64(const infra::wallet::KeyPair &kp, const std::string &api_target) {
