@@ -1,6 +1,6 @@
 # Utopixia CLI (`utx`)
 Version: 1.0 (long-form documentation, draft)  
-Last update: 2026-02-24
+Last update: 2026-10-01
 
 `utx` is the Git-like command-line tool for **Utopixia**: a distributed, multi-chain, **graph-native** infrastructure where code and data are stored as verifiable structures and can be reconstructed deterministically.
 
@@ -120,7 +120,7 @@ Each entry (“target”) contains:
 - `kind`: the parser / projector kind (html/js/css/markdown/cpp/graph/identity)
 - `last_revision_id`: non-empty when a commit is staged for push
 - `last_synced_hash`: local hash used by `status`
-- `genesis_labels`: optional user-defined labels to set at chain creation time
+- `genesis_labels`: legacy manifest metadata; the current V1 deploy protocol does not carry custom genesis labels
 
 ### `.utx/config.json` (local, not versioned)
 
@@ -254,20 +254,20 @@ Clears the local wallet reference. (It does not delete your wallet file.)
 
 - a stable chain id,
 - a kind (parser/projector),
-- optional genesis labels.
+- a parser/projector kind supported by the current node deploy planner.
 
 After that, `utx status` and `utx commit` can include that target.
 
 ### `utx add`
 
 ```bash
-utx add <path> [--chain <id>] [--kind <kind>] [--force] [--label <label>] [--labels a,b,c]
+utx add <path> [--chain <id>] [--kind <kind>] [--force]
 ```
 
 Examples:
 
 ```bash
-utx add web/index.html --label website --label landing
+utx add web/index.html
 utx add src/main.cpp
 utx add web/           # recursive add
 ```
@@ -295,13 +295,11 @@ If you do not pass `--kind`, `utx` deduces from the file extension:
 
 You can force the kind explicitly when needed.
 
+Go parsing/generation still exists in the CLI, but **Go deployment is temporarily rejected** because the current V1 node deploy planner does not route `kind=go` through its Go parser/projector path.
+
 #### Genesis labels
 
-Genesis labels are stored in `.utx.deploy.json` and applied **only when the chain is created** (genesis block).
-
-You can pass labels with `--label` repeated, or `--labels a,b,c`.
-
-Note: Identity chains are special. The reference `push` logic avoids applying custom labels for identity chains.
+The manifest still understands the legacy `genesis_labels` field for backward compatibility, but the current V1 `prepare/submit` protocol has no labels field. New `utx add --label/--labels` requests are therefore rejected instead of silently losing the labels.
 
 ---
 
@@ -600,25 +598,24 @@ Emits a SET action to update one property on-chain.
 
 ## 16. Chain tools (`utx chain`)
 
-These are power tools for manual chain manipulation.
+The legacy raw chain-write commands are intentionally unavailable with the V1 node protocol.
 
 ### `utx chain create`
 
-```bash
-utx chain create [--labels "a,b,c"] [--kind <kind>] [--chain_id <id>] [--projector <name>]
-```
+Direct genesis submission was removed from the public node API. A chain is now created implicitly by the first supported deployment:
 
-Creates a genesis block for a new chain.
+```bash
+utx add web/index.html
+utx commit "first deploy"
+utx push
+```
 
 ### `utx chain emit`
 
-```bash
-utx chain emit --chain_id <id> --content "<payload>"
-```
+Arbitrary public transaction submission was removed from the V1 API. `utx chain emit` therefore fails explicitly instead of calling the obsolete `/chain/{id}/transaction` endpoint.
 
-Emits a raw payload block on a chain. This is intentionally low-level and should be used carefully.
+Use a supported high-level deployment command such as `utx commit/push` or `utx graph update`.
 
----
 
 ## 17. Download from network (`utx download`)
 
@@ -665,7 +662,7 @@ utx login ~/.utx/wallet.json --target 127.0.0.1:8080
 mkdir -p web
 echo '<!doctype html><html><body>Hello</body></html>' > web/index.html
 
-utx add web/index.html --label website
+utx add web/index.html
 utx status
 
 utx commit "first deploy"
