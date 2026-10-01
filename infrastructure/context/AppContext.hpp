@@ -5,7 +5,6 @@
 
 #include "domain/Types.hpp"
 #include "infrastructure/chain/NetworkClient.hpp"
-#include "infrastructure/chain/TxManager.hpp"
 #include "infrastructure/parser/GraphParser.hpp"
 #include "infrastructure/ignore/IgnoreManager.hpp"
 #include "infrastructure/wallet/WalletHelper.hpp"
@@ -27,7 +26,6 @@ namespace utx::app::infrastructure::context {
 
         // services
         chain::NetworkClient network_client;
-        chain::TxManager tx_manager;
         parser::GraphParser graph_parser;
         ignore::IgnoreManager ignore_manager;
 
@@ -68,7 +66,6 @@ namespace utx::app::infrastructure::context {
                 ctx.wallet = wallet_res.value();
 
             ctx.network_client = chain::NetworkClient{ctx.project_config.api_target};
-            ctx.tx_manager = chain::TxManager{};
             ctx.graph_parser = parser::GraphParser{};
             ctx.ignore_manager = ignore::IgnoreManager{};
 
