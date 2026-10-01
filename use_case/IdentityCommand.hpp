@@ -170,6 +170,7 @@ namespace utx::app::use_case {
             domain::DeployRequest req;
             req.chain_id = my_addr.to_string();
             req.file_path = "identity";
+            req.kind = "identity";
             req.projector = "IdentityProjector";
             req.content = identity_content.dump();
             req.commit_message = "Create identity";

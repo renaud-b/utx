@@ -48,6 +48,28 @@ public:
         const std::string commit_message = args[2];
         const auto my_address = utx::domain::model::Address(ctx_.wallet->address);
 
+        for (const auto &target : ctx_.deploy_config.targets) {
+            if (target.kind == domain::TargetKind::Go) {
+                LOG_THIS_ERROR(
+                    "❌ Cannot commit {}: Go deploys are not supported by the current V1 node deploy planner.",
+                    target.path
+                );
+                return 1;
+            }
+
+            if (target.last_synced_hash.empty() &&
+                !target.genesis_labels.empty()) {
+                LOG_THIS_ERROR(
+                    "❌ Cannot create chain for {} with genesis labels: the current V1 deploy protocol does not carry labels.",
+                    target.path
+                );
+                LOG_THIS_INFO(
+                    "   Remove genesis_labels from the target before its first deploy."
+                );
+                return 1;
+            }
+        }
+
         std::string global_revision_content;
         size_t total_chains_modified = 0;
         size_t total_blocks_emitted = 0;
