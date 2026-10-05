@@ -121,6 +121,7 @@ Each entry (“target”) contains:
 - `last_revision_id`: non-empty when a commit is staged for push
 - `last_synced_hash`: local hash used by `status`
 - `genesis_labels`: optional user-defined labels to set at chain creation time
+- `genesis_projectors`: exact projector composition used when the target chain is created
 
 ### `.utx/config.json` (local, not versioned)
 
@@ -261,13 +262,14 @@ After that, `utx status` and `utx commit` can include that target.
 ### `utx add`
 
 ```bash
-utx add <path> [--chain <id>] [--kind <kind>] [--force] [--label <label>] [--labels a,b,c]
+utx add <path> [--chain <id>] [--kind <kind>] [--with-projector <name>] [--force] [--label <label>] [--labels a,b,c]
 ```
 
 Examples:
 
 ```bash
 utx add web/index.html --label website --label landing
+utx add web/index.html --with-projector DecentralizedProjector@AaEOWoA5fw-CvpqICMJSMQ
 utx add src/main.cpp
 utx add web/           # recursive add
 ```
@@ -294,6 +296,32 @@ If you do not pass `--kind`, `utx` deduces from the file extension:
 - everything else → graph
 
 You can force the kind explicitly when needed.
+
+#### Genesis projector composition
+
+`--with-projector <name>` adds a projector to the immutable genesis
+composition for the target. The option is repeatable.
+
+`utx` automatically keeps the system owner projector and the application
+projector derived from `kind`. For example:
+
+```bash
+utx add web/index.html \
+  --with-projector DecentralizedProjector@AaEOWoA5fw-CvpqICMJSMQ
+```
+
+for an HTML target records:
+
+```json
+"genesis_projectors": [
+  "OwnerProjector",
+  "DecentralizedProjector@AaEOWoA5fw-CvpqICMJSMQ",
+  "WebProjector"
+]
+```
+
+This composition is sent only while creating the chain. Projectors are immutable
+after genesis; later commits and pushes do not attempt to rewrite them.
 
 #### Genesis labels
 
@@ -487,9 +515,13 @@ This design has a nice property: the revision file itself is “self-routing”.
 For each chain, before sending segment blocks, `utx push` checks if the chain exists by fetching its last block. If it does not exist, it creates a genesis block.
 
 Genesis includes:
-- owners (the wallet address),
-- a projector name chosen from the target kind (Graph/Js/Web/Markdown/Cpp/Css/Identity),
+- the wallet sender as bootstrap authority,
+- the exact projector composition recorded by the target (or the default composition for older manifests),
 - labels.
+
+The normal composition starts with `OwnerProjector`, may contain reusable
+policy/capability projectors, and ends with the application projector selected
+from the target kind.
 
 Default labels include:
 
@@ -605,7 +637,7 @@ These are power tools for manual chain manipulation.
 ### `utx chain create`
 
 ```bash
-utx chain create [--labels "a,b,c"] [--kind <kind>] [--chain_id <id>] [--projector <name>]
+utx chain create [--labels "a,b,c"] [--kind <kind>] [--chain_id <id>] [--projector <name>] [--with-projector <name>]
 ```
 
 Creates a genesis block for a new chain.
