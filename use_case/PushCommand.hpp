@@ -291,8 +291,11 @@ public:
                         req.content = raw_content;
                         req.commit_message = "Repush revision " + rev_id;
 
+                        infrastructure::chain::NetworkClient local_network_client{
+                            ctx_.network_client.target
+                        };
                         const auto chain_exists =
-                            ctx_.network_client.get_last_block(
+                            local_network_client.get_last_block(
                                 utx::domain::model::Address(chain_id)
                             ).has_value();
                         if (!chain_exists) {
