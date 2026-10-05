@@ -177,6 +177,55 @@ TEST(DeployClientTest, DeploySubmitsRingReferenceAndWaitsForFinalization) {
     );
 }
 
+
+TEST(DeployClientTest, PrepareSendsProjectorComposition) {
+    LocalHttpServer http;
+    nlohmann::json captured;
+
+    http.server.Post(
+        "/api/deploy/prepare",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            captured = nlohmann::json::parse(req.body);
+            res.set_content(
+                nlohmann::json{
+                    {"plan_id", "plan-projectors"},
+                    {"transactions", nlohmann::json::array()}
+                }.dump(),
+                "application/json"
+            );
+        }
+    );
+
+    http.start();
+
+    DeployClient client(http.base_url());
+
+    DeployRequest request;
+    request.chain_id = "identity-chain";
+    request.kind = "identity";
+    request.content = R"({"user":{"pseudo":"renaud"}})";
+    request.projectors = {
+        "OwnerProjector",
+        "DecentralizedProjector@capability-chain",
+        "IdentityProjector"
+    };
+
+    const auto result = client.prepare(request, "sender");
+
+    ASSERT_TRUE(result.has_value()) << result.error();
+    ASSERT_FALSE(captured.is_null());
+    EXPECT_EQ(
+        captured.at("projectors"),
+        (nlohmann::json::array({
+            "OwnerProjector",
+            "DecentralizedProjector@capability-chain",
+            "IdentityProjector"
+        }))
+    );
+    EXPECT_EQ(captured.at("kind"), "identity");
+    EXPECT_FALSE(captured.contains("projector"));
+}
+
 TEST(DeployClientTest, EmptyPlanCompletesWithoutSubmit) {
     LocalHttpServer http;
     std::atomic<int> submit_calls{0};
