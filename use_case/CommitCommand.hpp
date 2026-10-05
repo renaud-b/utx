@@ -102,6 +102,17 @@ public:
                     req.commit_message = commit_message;
                     req.force_snapshot = force_snapshot;
 
+                    const auto chain_exists =
+                        ctx_.network_client.get_last_block(
+                            utx::domain::model::Address(target.chain)
+                        ).has_value();
+                    if (!chain_exists) {
+                        req.projectors =
+                            target.genesis_projectors.empty()
+                                ? domain::compose_genesis_projectors(target.kind)
+                                : target.genesis_projectors;
+                    }
+
                     auto plan_res = deploy_client.prepare(req, my_address.to_string());
 
                     if (!plan_res) {
