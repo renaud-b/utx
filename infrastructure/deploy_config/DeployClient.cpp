@@ -69,7 +69,9 @@ namespace utx::app::infrastructure::deploy {
             {"force_snapshot", req.force_snapshot}
         };
 
-        if (!req.projector.empty()) {
+        if (!req.projectors.empty()) {
+            body["projectors"] = req.projectors;
+        } else if (!req.projector.empty()) {
             body["projector"] = req.projector;
         }
         if (!req.kind.empty()) {
