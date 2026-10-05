@@ -263,8 +263,7 @@ namespace utx::app::use_case {
                 if (!genesis_labels.empty()) {
                     it->genesis_labels = genesis_labels;
                 }
-                if (projectors_explicitly_configured ||
-                    it->genesis_projectors.empty()) {
+                if (projectors_explicitly_configured) {
                     it->genesis_projectors = genesis_projectors;
                 }
             } else {
