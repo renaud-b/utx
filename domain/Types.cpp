@@ -38,6 +38,28 @@ std::string default_projector_for_kind(const TargetKind k) {
     }
 }
 
+std::vector<std::string> compose_genesis_projectors(
+    const TargetKind kind,
+    const std::vector<std::string>& additional
+) {
+    std::vector<std::string> projectors{"OwnerProjector"};
+
+    for (const auto& projector : additional) {
+        if (projector.empty() ||
+            std::ranges::contains(projectors, projector)) {
+            continue;
+        }
+        projectors.push_back(projector);
+    }
+
+    const auto application_projector = default_projector_for_kind(kind);
+    if (!std::ranges::contains(projectors, application_projector)) {
+        projectors.push_back(application_projector);
+    }
+
+    return projectors;
+}
+
 std::optional<TargetKind> parse_kind(std::string s) {
     std::ranges::transform(s, s.begin(), [](unsigned char c) { return std::tolower(c); });
     if (s == "html") return TargetKind::Html;
