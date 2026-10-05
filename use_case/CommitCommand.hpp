@@ -102,8 +102,11 @@ public:
                     req.commit_message = commit_message;
                     req.force_snapshot = force_snapshot;
 
+                    infrastructure::chain::NetworkClient local_network_client{
+                        ctx_.network_client.target
+                    };
                     const auto chain_exists =
-                        ctx_.network_client.get_last_block(
+                        local_network_client.get_last_block(
                             utx::domain::model::Address(target.chain)
                         ).has_value();
                     if (!chain_exists) {
