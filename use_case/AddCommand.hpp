@@ -24,9 +24,10 @@ namespace utx::app::use_case {
         int execute(const std::vector<std::string>& args) override {
             if (args.size() < 3 || args[2] == "--help" || args[2] == "-h") {
                 LOG_THIS_INFO(
-                    "Usage: utx add <path> [--chain <id>] [--kind <kind>] [--force] [--label <label>] [--labels <label1,label2,...>]");
+                    "Usage: utx add <path> [--chain <id>] [--kind <kind>] [--with-projector <name>] [--force] [--label <label>] [--labels <label1,label2,...>]");
                 LOG_THIS_INFO("  --chain <id>       : Specify the target chain ID (optional).");
                 LOG_THIS_INFO("  --kind <kind>      : Specify the target kind (Graph, Html, Js, Cpp, Css, Markdown, Go).");
+                LOG_THIS_INFO("  --with-projector <name> : Add a genesis projector before the kind projector (repeatable).");
                 LOG_THIS_INFO("  --force            : Force adding even if ignored by .utxignore.");
                 LOG_THIS_INFO("  --label <label>     : Add a genesis label to the target (can be used multiple times).");
                 LOG_THIS_INFO("  --labels <label1,label2,...> : Add multiple genesis labels (comma-separated).");
@@ -38,10 +39,23 @@ namespace utx::app::use_case {
             std::optional<std::string> chain_opt;
             std::optional<domain::TargetKind> kind_opt;
             std::vector<std::string> genesis_labels;
+            std::vector<std::string> additional_projectors;
 
 
             for (size_t i = 2; i < args.size(); ++i) {
                 if (args[i] == "--force") force = true;
+                if (args[i] == "--with-projector" && i + 1 < args.size()) {
+                    const auto projector = args[++i];
+                    if (projector == "OwnerProjector") {
+                        LOG_THIS_ERROR(
+                            "❌ OwnerProjector is managed automatically; do not pass it with --with-projector.");
+                        return 1;
+                    }
+                    if (!std::ranges::contains(additional_projectors, projector)) {
+                        additional_projectors.push_back(projector);
+                    }
+                    continue;
+                }
                 if (args[i] == "--label" && i + 1 < args.size()) {
                     genesis_labels.push_back(args[++i]);
                     continue;
@@ -133,11 +147,26 @@ namespace utx::app::use_case {
                 } else {
                     chain_id = utx::common::generate_uuid_v7().to_string();
                     LOG_THIS_INFO("{}ℹ️ Generated new chain id for {}: {}{}",
-                                  domain::color::cyan, target_file_rel_path, *chain_opt,
+                                  domain::color::cyan, target_file_rel_path, chain_id,
                                   domain::color::reset);
                 }
 
-                upsert_target(ctx_.deploy_config, target_file_rel_path, chain_id, kind, "", genesis_labels);
+                const auto genesis_projectors =
+                    domain::compose_genesis_projectors(
+                        kind,
+                        additional_projectors
+                    );
+
+                upsert_target(
+                    ctx_.deploy_config,
+                    target_file_rel_path,
+                    chain_id,
+                    kind,
+                    "",
+                    genesis_labels,
+                    genesis_projectors,
+                    !additional_projectors.empty()
+                );
                 added++;
 
                 LOG_THIS_INFO("  {}+{} {} -> chain:{} (kind:{}){}",
@@ -222,7 +251,9 @@ namespace utx::app::use_case {
                                   const std::string &chain_id,
                                   domain::TargetKind kind,
                                   const std::string &file_hash,
-                                  const std::vector<std::string> &genesis_labels) {
+                                  const std::vector<std::string> &genesis_labels,
+                                  const std::vector<std::string> &genesis_projectors,
+                                  const bool projectors_explicitly_configured) {
             auto it = std::ranges::find_if(deploy_config.targets, [&](auto &t) { return t.path == rel_path; });
             if (it != deploy_config.targets.end()) {
                 it->chain = chain_id;
@@ -232,6 +263,10 @@ namespace utx::app::use_case {
                 if (!genesis_labels.empty()) {
                     it->genesis_labels = genesis_labels;
                 }
+                if (projectors_explicitly_configured ||
+                    it->genesis_projectors.empty()) {
+                    it->genesis_projectors = genesis_projectors;
+                }
             } else {
                 domain::DeployTarget t;
                 t.path = rel_path;
@@ -240,6 +275,7 @@ namespace utx::app::use_case {
                 t.last_revision_id = "";
                 t.last_synced_hash = file_hash;
                 t.genesis_labels = genesis_labels;
+                t.genesis_projectors = genesis_projectors;
                 deploy_config.targets.push_back(std::move(t));
             }
         }
