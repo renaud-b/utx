@@ -28,11 +28,11 @@ namespace utx::app::use_case {
                 LOG_THIS_INFO(
                     "  --with-projector <name> : Add a genesis projector before the application projector (repeatable).");
                 LOG_THIS_INFO(
-                    "\nExample:\n  utx chain create --labels \"blog,personal\" --kind Html --projector HtmlProjector\n  utx chain emit --chain_id <id> --content \"Hello, Utopixia!\"");
+                    "\nExample:\n  utx chain create --labels \"blog,personal\" --kind Html --with-projector DecentralizedProjector@policy-chain\n  utx chain emit --chain_id <id> --content \"Hello, Utopixia!\"");
                 return 1;
             }
 
-            // utx chain create --label "testing" --projector "DecentralizedProjector@AZw_m2YKc5WEoueeMaj_QA:d5741f0e311aebf638d34765769d588d800e87887dd01111c9b1b9db080139f0"
+            // utx chain create --label "testing" --with-projector "DecentralizedProjector@policy-chain"
             // utx chain emit --chain_id AZw_nvzScfSgFsW1MksqYQ --content "This is a test action emitted from the CLI."
             const std::string subcmd = args[2];
             // Emit one tx on the given chain
