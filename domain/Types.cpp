@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <string>
 #include <nlohmann/json.hpp>
 
