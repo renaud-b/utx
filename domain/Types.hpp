@@ -1,7 +1,9 @@
 #pragma once
 
 #include <expected>
+#include <optional>
 #include <string>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 #include "domain/model/AtomicBlock.hpp"
@@ -18,6 +20,7 @@ namespace utx::app::domain {
         std::string commit_message = "deploy content";
         bool force_snapshot = true;
         std::string projector = "";
+        std::vector<std::string> projectors{};
     };
 
     struct DeployResult {
@@ -57,6 +60,8 @@ namespace utx::app::domain {
      * @return Optional TargetKind value if parsing is successful; std::nullopt otherwise.
      */
     std::optional<TargetKind> parse_kind(std::string s);
+    /** Canonical built-in projector used for a target kind. */
+    std::string default_projector_for_kind(TargetKind k);
     /** JSON serialization for TargetKind */
     inline void to_json(json& j, const TargetKind& k) {
         j = to_string(k);
@@ -82,6 +87,7 @@ namespace utx::app::domain {
         std::string last_revision_id;
         std::string last_synced_hash;
         std::vector<std::string> genesis_labels{};
+        std::vector<std::string> genesis_projectors{};
     };
     /** JSON serialization for DeployTarget */
     inline void to_json(json& j, const DeployTarget& t) {
@@ -91,7 +97,8 @@ namespace utx::app::domain {
             {"kind", t.kind},
             {"last_revision_id", t.last_revision_id},
             {"last_synced_hash", t.last_synced_hash},
-            {"genesis_labels", t.genesis_labels}
+            {"genesis_labels", t.genesis_labels},
+            {"genesis_projectors", t.genesis_projectors}
         };
     }
     /** JSON deserialization for DeployTarget */
@@ -102,6 +109,10 @@ namespace utx::app::domain {
         t.last_revision_id = j.value("last_revision_id", "");
         t.last_synced_hash = j.value("last_synced_hash", "");
         t.genesis_labels = j.value("genesis_labels", std::vector<std::string>{});
+        t.genesis_projectors = j.value(
+            "genesis_projectors",
+            std::vector<std::string>{}
+        );
     }
     /** Deployment configuration structure */
     struct DeployConfig {
