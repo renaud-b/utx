@@ -192,7 +192,7 @@ In Utopixia, **a user is a chain**, and your wallet identifies you (address + ke
 ### `utx identity create`
 
 ```bash
-utx identity create <wallet_path> <pseudo> [--target <api>]
+utx identity create <wallet_path> <pseudo> [--target <api>] [--with-projector <name>]
 ```
 
 This command:
@@ -203,11 +203,26 @@ This command:
 - stores the wallet file locally,
 - writes `.utx/config.json` with wallet path and API target.
 
+Additional projectors can be attached to the identity chain at genesis with
+`--with-projector`. The option is repeatable. `OwnerProjector` and
+`IdentityProjector` are managed automatically.
+
 Example:
 
 ```bash
-utx identity create ~/.utx/wallet.json <username>
+utx identity create ~/.utx/wallet.json <username> \
+  --with-projector DecentralizedProjector@AaEOWoA5fw-CvpqICMJSMQ
 ```
+
+This creates the identity chain with:
+
+```text
+OwnerProjector
+DecentralizedProjector@AaEOWoA5fw-CvpqICMJSMQ
+IdentityProjector
+```
+
+The projector composition is immutable after genesis.
 
 ### `utx identity show`
 
