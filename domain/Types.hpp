@@ -62,6 +62,11 @@ namespace utx::app::domain {
     std::optional<TargetKind> parse_kind(std::string s);
     /** Canonical built-in projector used for a target kind. */
     std::string default_projector_for_kind(TargetKind k);
+    /** Full genesis composition: OwnerProjector, optional policies, then the target projector. */
+    std::vector<std::string> compose_genesis_projectors(
+        TargetKind kind,
+        const std::vector<std::string>& additional = {}
+    );
     /** JSON serialization for TargetKind */
     inline void to_json(json& j, const TargetKind& k) {
         j = to_string(k);
