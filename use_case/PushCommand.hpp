@@ -291,6 +291,17 @@ public:
                         req.content = raw_content;
                         req.commit_message = "Repush revision " + rev_id;
 
+                        const auto chain_exists =
+                            ctx_.network_client.get_last_block(
+                                utx::domain::model::Address(chain_id)
+                            ).has_value();
+                        if (!chain_exists) {
+                            req.projectors =
+                                target.genesis_projectors.empty()
+                                    ? domain::compose_genesis_projectors(target.kind)
+                                    : target.genesis_projectors;
+                        }
+
                         auto plan_res = local_client.prepare(
                             req,
                             ctx_.wallet->address
