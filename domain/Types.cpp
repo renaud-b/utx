@@ -21,6 +21,23 @@ std::string to_string(TargetKind k) {
     }
 }
 
+
+std::string default_projector_for_kind(const TargetKind k) {
+    switch (k) {
+        case TargetKind::Html: return "WebProjector";
+        case TargetKind::Js: return "JsProjector";
+        case TargetKind::Css: return "CssProjector";
+        case TargetKind::Markdown: return "MarkdownProjector";
+        case TargetKind::Go: return "GoProjector";
+        case TargetKind::Cpp: return "CppProjector";
+        case TargetKind::Identity: return "IdentityProjector";
+        case TargetKind::Json:
+        case TargetKind::Graph:
+        default:
+            return "GraphProjector";
+    }
+}
+
 std::optional<TargetKind> parse_kind(std::string s) {
     std::ranges::transform(s, s.begin(), [](unsigned char c) { return std::tolower(c); });
     if (s == "html") return TargetKind::Html;
