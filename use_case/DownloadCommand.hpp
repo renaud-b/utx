@@ -465,6 +465,17 @@ namespace utx::app::use_case {
                     }
                 }
             }
+            if (const auto projectors =
+                    find_child_named(node, "genesis_projectors")) {
+                for (const auto& projector_node :
+                        ordered_children(*projectors)) {
+                    if (projector_node) {
+                        target.genesis_projectors.push_back(
+                            projector_node->get_property("value")
+                        );
+                    }
+                }
+            }
 
             return target;
         }
