@@ -5,7 +5,7 @@
 
 namespace utx::app::use_case {
     /** cmd_chain : Manage Utopixia chains.
-     * utx chain create [--labels <label1,label2,...>] [--kind <kind>] [--chain_id <id>] [--projector <projector_name>]
+     * utx chain create [--labels <label1,label2,...>] [--kind <kind>] [--chain_id <id>] [--projector <projector_name>] [--with-projector <name>]
      * utx chain emit --chain_id <id> --content <content>
      */
     class ChainCommand final : public AbstractCommand {
@@ -24,7 +24,9 @@ namespace utx::app::use_case {
                 LOG_THIS_INFO(
                     "  --chain_id <id> : Optionally specify a custom chain ID (default: auto-generated UUID).");
                 LOG_THIS_INFO(
-                    "  --projector <projector_name> : Optionally specify a custom projector (overrides kind-based default).");
+                    "  --projector <projector_name> : Optionally override the kind-based application projector.");
+                LOG_THIS_INFO(
+                    "  --with-projector <name> : Add a genesis projector before the application projector (repeatable).");
                 LOG_THIS_INFO(
                     "\nExample:\n  utx chain create --labels \"blog,personal\" --kind Html --projector HtmlProjector\n  utx chain emit --chain_id <id> --content \"Hello, Utopixia!\"");
                 return 1;
@@ -72,6 +74,7 @@ namespace utx::app::use_case {
                 std::vector<std::string> genesis_labels;
                 domain::TargetKind kind = domain::TargetKind::Graph;
                 std::optional<std::string> chain_id_opt;
+                std::vector<std::string> additional_projectors;
 
                 std::string projector;
                 for (size_t i = 3; i < args.size(); ++i) {
@@ -106,6 +109,19 @@ namespace utx::app::use_case {
                     if (args[i] == "--projector" && i + 1 < args.size()) {
                         projector = args[++i];
                     }
+                    if (args[i] == "--with-projector" && i + 1 < args.size()) {
+                        const auto extra = args[++i];
+                        if (extra == "OwnerProjector") {
+                            LOG_THIS_ERROR(
+                                "❌ OwnerProjector is managed automatically; do not pass it with --with-projector.");
+                            return 1;
+                        }
+                        if (!std::ranges::contains(
+                                additional_projectors,
+                                extra)) {
+                            additional_projectors.push_back(extra);
+                        }
+                    }
                 }
 
                 const auto chain_id = chain_id_opt.value_or(common::generate_uuid_v7().to_string());
@@ -120,23 +136,25 @@ namespace utx::app::use_case {
                     return 1;
                 }
 
-                std::string selected_projector = "GraphProjector";
-                if (kind == domain::TargetKind::Html) {
-                    selected_projector = "HtmlProjector";
-                } else if (kind == domain::TargetKind::Js) {
-                    selected_projector = "JsProjector";
-                } else if (kind == domain::TargetKind::Cpp) {
-                    selected_projector = "CppProjector";
-                } else if (kind == domain::TargetKind::Css) {
-                    selected_projector = "CssProjector";
-                } else if (kind == domain::TargetKind::Markdown) {
-                    selected_projector = "MarkdownProjector";
-                } else if (kind == domain::TargetKind::Go) {
-                    selected_projector = "GoProjector";
-                }
+                const auto selected_projector =
+                    projector.empty()
+                        ? domain::default_projector_for_kind(kind)
+                        : projector;
 
-                if (!projector.empty()) {
-                    selected_projector = projector;
+                auto projectors =
+                    domain::compose_genesis_projectors(
+                        kind,
+                        additional_projectors
+                    );
+                const auto default_projector =
+                    domain::default_projector_for_kind(kind);
+                if (selected_projector != default_projector) {
+                    std::erase(projectors, default_projector);
+                    if (!std::ranges::contains(
+                            projectors,
+                            selected_projector)) {
+                        projectors.push_back(selected_projector);
+                    }
                 }
 
                 if (!ctx_.wallet) {
@@ -146,7 +164,7 @@ namespace utx::app::use_case {
                 auto genesis_transaction = infrastructure::chain::TxManager::forge_genesis_transaction(
                     *ctx_.wallet,
                     chain_address,
-                    {selected_projector},
+                    projectors,
                     genesis_labels
                 );
                 if (!ctx_.network_client.send_transaction(chain_address, genesis_transaction, *ctx_.wallet)) {
