@@ -2,6 +2,7 @@
 
 #include <expected>
 #include <string>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 #include "domain/model/AtomicBlock.hpp"
@@ -18,6 +19,7 @@ namespace utx::app::domain {
         std::string commit_message = "deploy content";
         bool force_snapshot = true;
         std::string projector = "";
+        std::vector<std::string> projectors{};
     };
 
     struct DeployResult {
