@@ -1,8 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <expected>
 #include <filesystem>
 #include <fstream>
+#include <vector>
 #include "AbstractCommand.hpp"
 #include "common/Logger.hpp"
 
@@ -27,7 +29,7 @@ namespace utx::app::use_case {
             if (args.size() < 3) {
                 LOG_THIS_INFO("Usage: utx identity <subcommand> [options]");
                 LOG_THIS_INFO("Subcommands:");
-                LOG_THIS_INFO("  create <wallet_path> <pseudo> [--target <api>]  Create a new identity");
+                LOG_THIS_INFO("  create <wallet_path> <pseudo> [--target <api>] [--with-projector <name>]  Create a new identity");
                 LOG_THIS_INFO("  show                                            Show identity info");
                 LOG_THIS_INFO(
                     "  b64                                             Output base64-encoded identity config (for use in env vars)");
@@ -83,7 +85,7 @@ namespace utx::app::use_case {
             const std::vector<std::string> &args
         ) {
             if (args.size() < 5) {
-                LOG_THIS_INFO("Usage: utx identity create <wallet_path> <pseudo> [--target <api>]");
+                LOG_THIS_INFO("Usage: utx identity create <wallet_path> <pseudo> [--target <api>] [--with-projector <name>]");
                 return 1;
             }
 
@@ -91,13 +93,39 @@ namespace utx::app::use_case {
             const std::string pseudo = args[4];
 
             std::string target = "127.0.0.1:8080";
+            std::vector<std::string> additional_projectors;
             if (!cfg.api_target.empty()) {
                 target = cfg.api_target;
             }
 
-            for (size_t i = 4; i < args.size(); ++i) {
+            for (size_t i = 5; i < args.size(); ++i) {
                 if (args[i] == "--target" && i + 1 < args.size()) {
                     target = args[++i];
+                    continue;
+                }
+
+                if (args[i] == "--with-projector" && i + 1 < args.size()) {
+                    const auto projector = args[++i];
+
+                    if (projector.empty()) {
+                        LOG_THIS_ERROR("❌ Projector name cannot be empty.");
+                        return 1;
+                    }
+
+                    if (projector == "OwnerProjector" ||
+                        projector == "IdentityProjector") {
+                        LOG_THIS_ERROR(
+                            "❌ {} is managed automatically for identity chains.",
+                            projector
+                        );
+                        return 1;
+                    }
+
+                    if (!std::ranges::contains(
+                            additional_projectors,
+                            projector)) {
+                        additional_projectors.push_back(projector);
+                    }
                 }
             }
 
@@ -153,6 +181,12 @@ namespace utx::app::use_case {
             auto graph_opt = net.get_graph(my_addr);
 
             if (graph_opt) {
+                if (!additional_projectors.empty()) {
+                    LOG_THIS_ERROR(
+                        "❌ Cannot add projectors to an existing identity; projector composition is fixed at genesis."
+                    );
+                    return 1;
+                }
                 LOG_THIS_INFO("ℹ️ Identity already exists on network.");
             } else {
                 LOG_THIS_INFO("🛠️ Identity will be created.");
@@ -170,7 +204,13 @@ namespace utx::app::use_case {
             req.chain_id = my_addr.to_string();
             req.file_path = "identity";
             req.kind = "identity";
-            req.projector = "IdentityProjector";
+            req.projectors = {"OwnerProjector"};
+            req.projectors.insert(
+                req.projectors.end(),
+                additional_projectors.begin(),
+                additional_projectors.end()
+            );
+            req.projectors.push_back("IdentityProjector");
             req.content = identity_content.dump();
             req.commit_message = "Create identity";
             req.force_snapshot = true;
