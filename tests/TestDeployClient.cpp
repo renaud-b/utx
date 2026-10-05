@@ -75,6 +75,15 @@ TEST(DeployClientTest, DeploySubmitsRingReferenceAndWaitsForFinalization) {
 
             EXPECT_EQ(request.at("chain_id"), "chain-123");
             EXPECT_EQ(request.at("content"), "hello");
+            EXPECT_EQ(
+                request.at("projectors"),
+                (nlohmann::json::array({
+                    "OwnerProjector",
+                    "DecentralizedProjector@policy-chain",
+                    "WebProjector"
+                }))
+            );
+            EXPECT_FALSE(request.contains("projector"));
 
             res.set_content(
                 nlohmann::json{
@@ -138,6 +147,11 @@ TEST(DeployClientTest, DeploySubmitsRingReferenceAndWaitsForFinalization) {
     request.file_path = "index.html";
     request.content = "hello";
     request.commit_message = "test deploy";
+    request.projectors = {
+        "OwnerProjector",
+        "DecentralizedProjector@policy-chain",
+        "WebProjector"
+    };
 
     const auto result = client.deploy(request, wallet);
 
