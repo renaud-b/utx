@@ -35,7 +35,6 @@ namespace utx::app::use_case {
             LOG_THIS_INFO("---------------------------------------------------------");
 
             std::vector<std::string> tracked_files;
-            bool has_pending_push = false;
 
             for (const auto &target: ctx_.deploy_config.targets) {
                 tracked_files.push_back(target.path);
@@ -54,22 +53,9 @@ namespace utx::app::use_case {
                 std::string raw_content = common::io::read_file(local_p.string());
                 std::string current_file_hash = common::md5_hex(raw_content);
 
-                // --- Logique d'affichage ---
-                if (!target.last_revision_id.empty()) {
+                if (current_file_hash != target.last_synced_hash) {
                     LOG_THIS_INFO(
-                        "  {}[COMMITTED]{}  {} -> rev:{} {}{}{} (Ready to push)",
-                        domain::color::cyan,
-                        domain::color::reset,
-                        target.path,
-                        target.last_revision_id,
-                        domain::color::grey, target.chain,
-                        domain::color::reset
-                    );
-                    has_pending_push = true;
-                } else if (current_file_hash != target.last_synced_hash) {
-                    // here we detect that the file has changed locally since the last sync (push or commit), but it has not been committed yet.
-                    LOG_THIS_INFO(
-                        "  {}[MODIFIED]{}   {} {}{}{} (File changed, needs commit)",
+                        "  {}[MODIFIED]{}   {} {}{}{} (File changed, needs deploy)",
                         domain::color::yellow,
                         domain::color::reset,
                         target.path,
@@ -78,8 +64,6 @@ namespace utx::app::use_case {
                         domain::color::reset
                     );
                 } else {
-                    // If the file is unchanged since last sync, we can consider it clean, even if it's not committed
-                    // (it may be already pushed or it may be a file that was added but never changed since then).
                     LOG_THIS_INFO(
                         "  {}[CLEAN]{}      {} {}{}{} (Synced)",
                         domain::color::green,
@@ -124,14 +108,6 @@ namespace utx::app::use_case {
                         rel
                     );
                 }
-            }
-
-            if (has_pending_push) {
-                LOG_THIS_INFO(
-                    "\n{}🚀 Local revision(s) detected. Use 'utx push' to broadcast to Singularity.{}",
-                    domain::color::cyan,
-                    domain::color::reset
-                );
             }
 
             return 0;
