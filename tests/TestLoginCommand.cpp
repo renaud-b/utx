@@ -1,5 +1,6 @@
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
 
@@ -105,12 +106,21 @@ TEST(LoginCommandTest, ImportsIdentityConfigAndPersistsLocalWallet) {
     AppContext ctx;
     ctx.root = project.root;
 
-    const auto encoded =
-        identity_b64(wallet, http.base_url());
+    const auto identity_file =
+        project.root / "identity.b64";
+    {
+        std::ofstream out(identity_file);
+        out << identity_b64(wallet, http.base_url()) << "\n";
+    }
 
     ASSERT_EQ(
         LoginCommand(ctx).execute(
-            {"utx", "login", "--b64", encoded}
+            {
+                "utx",
+                "login",
+                "--b64-file",
+                identity_file.string()
+            }
         ),
         0
     );
@@ -145,12 +155,22 @@ TEST(LoginCommandTest, ExplicitTargetOverridesIdentityConfigTarget) {
     AppContext ctx;
     ctx.root = project.root;
 
+    const auto identity_file =
+        project.root / "identity.b64";
+    {
+        std::ofstream out(identity_file);
+        out << identity_b64(
+            wallet,
+            "http://invalid.example"
+        );
+    }
+
     ASSERT_EQ(
         LoginCommand(ctx).execute({
             "utx",
             "login",
-            "--b64",
-            identity_b64(wallet, "http://invalid.example"),
+            "--b64-file",
+            identity_file.string(),
             "--target",
             http.base_url()
         }),
@@ -179,12 +199,42 @@ TEST(LoginCommandTest, RejectsIdentityAddressThatDoesNotMatchPublicKey) {
     AppContext ctx;
     ctx.root = project.root;
 
+    const auto identity_file =
+        project.root / "invalid-identity.b64";
+    {
+        std::ofstream out(identity_file);
+        out << utx::common::base64::encode(invalid.dump());
+    }
+
     ASSERT_EQ(
         LoginCommand(ctx).execute({
             "utx",
             "login",
-            "--b64",
-            utx::common::base64::encode(invalid.dump())
+            "--b64-file",
+            identity_file.string()
+        }),
+        1
+    );
+
+    EXPECT_FALSE(
+        std::filesystem::exists(
+            project.root / ".utx" / "wallet.json"
+        )
+    );
+}
+
+TEST(LoginCommandTest, RejectsMissingIdentityConfigFile) {
+    TempLoginProject project;
+
+    AppContext ctx;
+    ctx.root = project.root;
+
+    EXPECT_EQ(
+        LoginCommand(ctx).execute({
+            "utx",
+            "login",
+            "--b64-file",
+            (project.root / "missing.b64").string()
         }),
         1
     );
