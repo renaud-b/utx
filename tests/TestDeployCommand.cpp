@@ -137,7 +137,6 @@ TEST(DeployCommandTest, DeploysModifiedTargetAndMarksItSyncedAfterFinalization) 
         .path = "index.html",
         .chain = "chain-1",
         .kind = TargetKind::Html,
-        .last_revision_id = {},
         .last_synced_hash = {}
     });
 
