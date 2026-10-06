@@ -1,10 +1,12 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <filesystem>
 #include <future>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "AbstractCommand.hpp"
