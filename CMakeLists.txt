@@ -92,6 +92,7 @@ if (BUILD_TESTING)
             domain/graph/GraphElement.cpp
             domain/graph/Action.cpp
             common/Hash.cpp
+            common/Uuid.cpp
     )
 
     target_include_directories(utx_tests PRIVATE .)
