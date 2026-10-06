@@ -452,9 +452,6 @@ namespace utx::app::use_case {
             if (const auto kind = find_child_named(node, "kind")) {
                 target.kind = app_domain::parse_kind(kind->get_property("value")).value_or(app_domain::TargetKind::Graph);
             }
-            if (const auto last_revision_id = find_child_named(node, "last_revision_id")) {
-                target.last_revision_id = last_revision_id->get_property("value");
-            }
             if (const auto last_synced_hash = find_child_named(node, "last_synced_hash")) {
                 target.last_synced_hash = last_synced_hash->get_property("value");
             }
