@@ -85,6 +85,7 @@ if (BUILD_TESTING)
             tests/TestDeployClient.cpp
             tests/TestDeployCommand.cpp
             tests/TestResetCommand.cpp
+            tests/TestLoginCommand.cpp
             infrastructure/deploy_config/DeployClient.cpp
             domain/Types.cpp
             common/Hash.cpp
