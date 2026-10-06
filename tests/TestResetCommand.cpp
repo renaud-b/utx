@@ -36,7 +36,7 @@ public:
     std::filesystem::path root;
 };
 
-TEST(ResetCommandTest, ClearsOnlySynchronizationHashesAndPreservesProjectTopology) {
+TEST(ResetCommandTest, ClearsSynchronizationHashesAndLegacyLabelsWhilePreservingProjectTopology) {
     TempResetProject project;
 
     const std::string content = "<html><body>Hello</body></html>";
@@ -94,8 +94,7 @@ TEST(ResetCommandTest, ClearsOnlySynchronizationHashesAndPreservesProjectTopolog
     EXPECT_EQ(target.chain, "content-chain");
     EXPECT_EQ(target.kind, TargetKind::Html);
     EXPECT_TRUE(target.last_synced_hash.empty());
-    ASSERT_EQ(target.genesis_labels.size(), 1U);
-    EXPECT_EQ(target.genesis_labels.front(), "site");
+    EXPECT_TRUE(target.genesis_labels.empty());
 
     EXPECT_TRUE(saved->targets[1].last_synced_hash.empty());
 
