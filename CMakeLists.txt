@@ -193,6 +193,11 @@ if (BUILD_TESTING)
             spdlog::spdlog
             ${SODIUM_LIB}
             GTest::gtest_main
+            tree-sitter
+            tree-sitter-html
+            tree-sitter-css
+            tree-sitter-javascript
+            tree-sitter-go
     )
 
     include(GoogleTest)
