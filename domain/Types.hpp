@@ -61,7 +61,6 @@ namespace utx::app::domain {
         std::string path;
         std::string chain;
         TargetKind kind{TargetKind::Graph};
-        std::string last_revision_id;
         std::string last_synced_hash;
         std::vector<std::string> genesis_labels{};
     };
@@ -71,7 +70,6 @@ namespace utx::app::domain {
             {"path", t.path},
             {"chain", t.chain},
             {"kind", t.kind},
-            {"last_revision_id", t.last_revision_id},
             {"last_synced_hash", t.last_synced_hash},
             {"genesis_labels", t.genesis_labels}
         };
@@ -81,7 +79,6 @@ namespace utx::app::domain {
         t.path = j.value("path", "");
         t.chain = j.value("chain", "");
         t.kind = j.contains("kind") ? j.at("kind").get<TargetKind>() : TargetKind::Graph;
-        t.last_revision_id = j.value("last_revision_id", "");
         t.last_synced_hash = j.value("last_synced_hash", "");
         t.genesis_labels = j.value("genesis_labels", std::vector<std::string>{});
     }
