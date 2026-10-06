@@ -19,6 +19,7 @@
 #include "use_case/LoginCommand.hpp"
 #include "use_case/LastCommitCommand.hpp"
 #include "use_case/DownloadCommand.hpp"
+#include "use_case/DeployCommand.hpp"
 #include "use_case/PushCommand.hpp"
 #include "use_case/StatusCommand.hpp"
 #include "use_case/UncommitCommand.hpp"
@@ -94,6 +95,7 @@ int main(int argc, char **argv) {
         if (cmd == "add") return utx::app::use_case::AddCommand(ctx.value()).execute(args);
         if (cmd == "api") return utx::app::use_case::ApiCommand(ctx.value()).execute(args);
         if (cmd == "commit") return utx::app::use_case::CommitCommand(ctx.value()).execute(args);
+        if (cmd == "deploy") return utx::app::use_case::DeployCommand(ctx.value()).execute(args);
         if (cmd == "push") return utx::app::use_case::PushCommand(ctx.value()).execute(args);
         if (cmd == "uncommit") return utx::app::use_case::UncommitCommand(ctx.value()).execute(args);
         if (cmd == "identity") return utx::app::use_case::IdentityCommand(ctx.value()).execute(args);
