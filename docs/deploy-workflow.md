@@ -38,3 +38,32 @@ A multi-chain deploy is not a global atomic transaction. Partial success is poss
 `utx deploy` therefore reports failure when any target fails, while retaining the successful targets as synchronized locally.
 
 Offline preparation is intentionally not part of the current workflow. If a future use case requires review or delayed submission, it should be introduced as a separate explicit operation rather than changing the semantics of `deploy`.
+
+
+## Reset after a network reinitialization
+
+## Invariant
+
+`utx reset` invalidates only the local synchronization proof.
+
+It clears every tracked target's `last_synced_hash`. Chain IDs, file paths, kinds, genesis labels, wallet configuration, API target, deploy-chain ID, and local files are preserved.
+
+## Why
+
+`last_synced_hash` records that a local content hash reached `Finalized` on the network known at that time. After a network reinitialization, that historical fact no longer proves the target exists on the current network.
+
+## Consequence
+
+```text
+utx reset
+utx status
+utx deploy "redeploy after network reset"
+```
+
+Existing tracked files appear modified again and are eligible for deployment.
+
+The operation is idempotent: running `utx reset` repeatedly does not alter project topology.
+
+## Limits
+
+Resetting synchronization state does not add deploy-protocol capabilities. Targets that need unsupported genesis options remain subject to the same protocol limits.
