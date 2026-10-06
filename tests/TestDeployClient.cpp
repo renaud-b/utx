@@ -226,6 +226,107 @@ TEST(DeployClientTest, PrepareSendsProjectorComposition) {
     EXPECT_FALSE(captured.contains("projector"));
 }
 
+
+TEST(DeployClientTest, RawDeployPreservesPayloadAndUsesV1Flow) {
+    LocalHttpServer http;
+
+    const nlohmann::json ring_reference = {
+        {"version", "ring-v1"}
+    };
+    const std::string payload =
+        "urn:pi:capability:init:family-v1";
+
+    nlohmann::json captured_submit;
+
+    http.server.Post(
+        "/api/deploy/prepare",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            const auto request = nlohmann::json::parse(req.body);
+
+            EXPECT_EQ(request.at("chain_id"), "identity-chain");
+            EXPECT_EQ(request.at("kind"), "raw");
+            EXPECT_EQ(request.at("content"), payload);
+
+            res.set_content(
+                nlohmann::json{
+                    {"plan_id", "plan-raw"},
+                    {"ring_reference", ring_reference},
+                    {"transactions", nlohmann::json::array({
+                        {{"payload_data", payload}}
+                    })}
+                }.dump(),
+                "application/json"
+            );
+        }
+    );
+
+    http.server.Post(
+        "/api/deploy/submit",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            captured_submit = nlohmann::json::parse(req.body);
+            res.status = 202;
+            res.set_content(
+                nlohmann::json{
+                    {"status", "queued"},
+                    {"pending_block_ids", nlohmann::json::array({"pending-raw"})},
+                    {"transactions_queued", 1}
+                }.dump(),
+                "application/json"
+            );
+        }
+    );
+
+    http.server.Get(
+        R"(/chain/([^/]+)/pending/([^/]+))",
+        [](const httplib::Request& req, httplib::Response& res) {
+            res.set_content(
+                nlohmann::json{
+                    {"id", req.matches[2].str()},
+                    {"chain_address", req.matches[1].str()},
+                    {"state", "Finalized"},
+                    {"error", nullptr}
+                }.dump(),
+                "application/json"
+            );
+        }
+    );
+
+    http.start();
+
+    const auto wallet = WalletHelper::generate_keypair();
+    DeployClient client(http.base_url());
+
+    DeployRequest request;
+    request.chain_id = "identity-chain";
+    request.file_path = "raw";
+    request.kind = "raw";
+    request.content = payload;
+    request.commit_message = "Raw transaction";
+    request.force_snapshot = false;
+
+    const auto result = client.deploy(request, wallet);
+
+    ASSERT_TRUE(result.has_value()) << result.error();
+    EXPECT_TRUE(result->success);
+    ASSERT_FALSE(captured_submit.is_null());
+
+    const auto& signed_transactions =
+        captured_submit.at("signed_transactions");
+    ASSERT_EQ(signed_transactions.size(), 1U);
+    EXPECT_EQ(
+        signed_transactions.at(0).at("sender"),
+        wallet.address
+    );
+    EXPECT_EQ(
+        signed_transactions.at(0).at("receiver"),
+        "identity-chain"
+    );
+    EXPECT_EQ(
+        signed_transactions.at(0).at("data"),
+        payload
+    );
+}
+
 TEST(DeployClientTest, EmptyPlanCompletesWithoutSubmit) {
     LocalHttpServer http;
     std::atomic<int> submit_calls{0};
