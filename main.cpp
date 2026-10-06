@@ -19,6 +19,7 @@
 #include "use_case/DownloadCommand.hpp"
 #include "use_case/DeployCommand.hpp"
 #include "use_case/StatusCommand.hpp"
+#include "use_case/ResetCommand.hpp"
 
 
 /** cmd_logout : Log out of the current wallet session.
@@ -80,7 +81,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if (!ctx->wallet && cmd != "login") {
+    if (!ctx->wallet && cmd != "login" && cmd != "reset") {
         LOG_THIS_ERROR("❌ Error: No wallet configured. Please run 'utx login <wallet_path>' first.");
         return 1;
     }
@@ -94,6 +95,7 @@ int main(int argc, char **argv) {
         if (cmd == "login") return utx::app::use_case::LoginCommand(ctx.value()).execute(args);
         if (cmd == "ignore") return utx::app::use_case::IgnoreCommand(ctx.value()).execute(args);
         if (cmd == "status") return utx::app::use_case::StatusCommand(ctx.value()).execute(args);
+        if (cmd == "reset") return utx::app::use_case::ResetCommand(ctx.value()).execute(args);
         if (cmd == "chain") return utx::app::use_case::ChainCommand(ctx.value()).execute(args);
         if (cmd == "graph") return utx::app::use_case::GraphCommand(ctx.value()).execute(args);
     } catch (const std::exception &e) {
