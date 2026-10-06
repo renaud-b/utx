@@ -29,7 +29,7 @@ namespace utx::app::use_case {
                     "❌ 'utx chain create' is not available with the V1 node protocol."
                 );
                 LOG_THIS_INFO(
-                    "   Track content with 'utx add', then use 'utx commit' and 'utx push'; the first deploy creates the chain."
+                    "   Track content with 'utx add', then use 'utx deploy'; the first deploy creates the chain."
                 );
                 return 1;
             }
