@@ -44,13 +44,15 @@ Offline preparation is intentionally not part of the current workflow. If a futu
 
 ## Invariant
 
-`utx reset` invalidates only the local synchronization proof.
+`utx reset` invalidates local synchronization proof and removes legacy genesis metadata that the current deploy protocol cannot replay.
 
-It clears every tracked target's `last_synced_hash`. Chain IDs, file paths, kinds, genesis labels, wallet configuration, API target, deploy-chain ID, and local files are preserved.
+It clears every tracked target's `last_synced_hash` and `genesis_labels`. Chain IDs, file paths, kinds, wallet configuration, API target, deploy-chain ID, and local files are preserved.
 
 ## Why
 
 `last_synced_hash` records that a local content hash reached `Finalized` on the network known at that time. After a network reinitialization, that historical fact no longer proves the target exists on the current network.
+
+`genesis_labels` is legacy manifest metadata. The current V1 prepare/submit protocol does not carry it, so preserving those labels across a reset would make the next deploy fail before reseeding can begin.
 
 ## Consequence
 
@@ -66,4 +68,4 @@ The operation is idempotent: running `utx reset` repeatedly does not alter proje
 
 ## Limits
 
-Resetting synchronization state does not add deploy-protocol capabilities. Targets that need unsupported genesis options remain subject to the same protocol limits.
+Resetting synchronization state does not add deploy-protocol capabilities. Legacy genesis labels are deliberately discarded because they cannot be represented by the current V1 deploy protocol.
