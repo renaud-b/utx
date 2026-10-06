@@ -143,6 +143,18 @@ TEST(LoginCommandTest, ImportsIdentityConfigAndPersistsLocalWallet) {
         std::filesystem::absolute(wallet_path).string()
     );
     EXPECT_EQ(config.api_target, http.base_url());
+
+    std::ifstream local_config_file(
+        project.root / ".utx" / "config.json"
+    );
+    const std::string local_config{
+        std::istreambuf_iterator<char>{local_config_file},
+        std::istreambuf_iterator<char>{}
+    };
+    EXPECT_EQ(
+        local_config.find(wallet.private_key_hex),
+        std::string::npos
+    );
 }
 
 TEST(LoginCommandTest, ExplicitTargetOverridesIdentityConfigTarget) {
