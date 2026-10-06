@@ -252,7 +252,6 @@ namespace utx::app::use_case {
                 t.path = rel_path;
                 t.chain = chain_id;
                 t.kind = kind;
-                t.last_revision_id = "";
                 t.last_synced_hash = file_hash;
                 deploy_config.targets.push_back(std::move(t));
             }
