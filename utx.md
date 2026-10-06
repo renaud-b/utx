@@ -548,18 +548,16 @@ utx deploy "first deploy"
 
 After push, your `web/index.html` chain exists, and nodes can rebuild its DOM graph deterministically.
 
-### B. Iterate quickly (commit locally, push later)
+### B. Iterate quickly
+
+Edit files freely, inspect local changes, then deploy the current state in one shot:
 
 ```bash
-utx commit "work in progress"
-# do other edits...
-utx commit "more work"
-# now push when ready
-utx push
+utx status
+utx deploy "update"
 ```
 
-(If the tool blocks a second commit because a revision is pending, use `utx push` or `utx uncommit` first.)
-
+There is no local commit queue. If delayed/offline preparation is needed in the future, it will be exposed as a separate explicit operation rather than changing `deploy` semantics.
 ### C. Force snapshot for big structural changes
 
 ```bash
@@ -572,42 +570,28 @@ utx deploy "major refactor" --force-snapshot
 
 ### “Why does `status` say CLEAN but the network is different?”
 
-`status` is based on local `last_synced_hash`. It does not fetch remote state. If a push was partial or you changed API targets, local state may not reflect reality.
+`status` is based on local `last_synced_hash`. It does not fetch remote state. If you changed API targets or external tools modified a chain, local state may not reflect that remote history.
 
-Use `utx push` again, or fetch graph state via `utx graph show`.
+Use `utx graph show <chain_id>` to inspect remote graph state. A later `utx deploy` always asks the node to plan against its current canonical state.
 
-### “Why did `commit` choose SNAPSHOT?”
+### “Why did deploy choose SNAPSHOT?”
 
-Because the snapshot payload size (base64 JSON) was smaller than the incremental payload size, unless you forced a strategy.
+The strategy is selected by the node-side deploy planner from the current remote graph, the submitted content and policy flags. Use `--force-snapshot` when an explicit full-state deployment is required.
 
-This can happen when:
-- many nodes changed,
-- reorderings produce lots of MOVE/DELETE/SET operations,
-- your action encoding overhead is large.
+### “Why is my diff unexpectedly large?”
 
-### “Why is my diff huge after a small change?”
+Parsing and graph diffing are node responsibilities. Typical causes include parser/version differences, unstable node identifiers, structural reorderings, or a local source whose parsed structure differs significantly from the canonical remote graph.
 
-Typical causes:
-- parser differences (version mismatch, options, or stability issues),
-- node id generation not stable (causes “everything looks new”),
-- the local parse graph is structurally different from what remote expects,
-- whitespace/token emission options differ (especially for C++ strict round-trip mode).
+### “Deploy is partial. What should I do?”
 
-### “Why does push create a genesis even though I thought the chain existed?”
-
-If `utx push` cannot fetch the last block (`/chain/<addr>/last` returns 404 or network error), it may assume the chain is missing. Confirm API target and connectivity.
-
-### “Push is partial. What should I do?”
-
-Run `utx deploy` again. The revision file remains until full success cleanup. Successful chains should have updated `last_synced_hash` already.
+Run `utx deploy` again after fixing the reported error. Targets that already reached `Finalized` have their `last_synced_hash` updated locally; failed targets remain `MODIFIED` and are replanned against current network state.
 
 ---
-
 ## 18. Security and determinism notes
 
-- `utx` relies on deterministic parsers and deterministic action application. If parsers are not stable, structural diffs can become noisy.
-- The tool signs every emitted block using the active wallet. Keep wallet files safe.
-- Multi-chain parallel pushes improve throughput, but also increase surface area for partial failures. The CLI is designed to handle partial push recovery.
+- Nodes are responsible for deterministic parsing, graph diffing and action/snapshot planning.
+- `utx` signs the transactions produced by the node plan using the active wallet. Keep wallet files safe.
+- Multi-chain parallel deploys improve throughput but allow partial success by design; failed targets are safely replanned on retry.
 
 A key philosophical point: the system guarantees deterministic replay, not canonical minimal diffs. Different action sequences may produce the same final projected state; history can be meaningful.
 
@@ -621,7 +605,6 @@ A key philosophical point: the system guarantees deterministic replay, not canon
 **Graph**: structured representation of code/data; rebuilt from snapshot + actions.  
 **Action**: transformation applied to a graph state (SET/DELETE/MOVE/GROUP/COMMIT_TAG).  
 **Snapshot**: base64-encoded JSON full graph state for fast rebuild.  
-**Revision file**: local file containing chain payload lines to push.  
 **Commit tag**: an action that terminates a chain segment and provides routing metadata.
 
 ---
