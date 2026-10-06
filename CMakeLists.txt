@@ -88,6 +88,9 @@ if (BUILD_TESTING)
             tests/TestLoginCommand.cpp
             infrastructure/deploy_config/DeployClient.cpp
             domain/Types.cpp
+            domain/graph/Graph.cpp
+            domain/graph/GraphElement.cpp
+            domain/graph/Action.cpp
             common/Hash.cpp
     )
 
