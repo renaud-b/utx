@@ -613,7 +613,8 @@ Emits a SET action to update one property on-chain.
 
 ## 16. Chain tools (`utx chain`)
 
-The legacy raw chain-write commands are intentionally unavailable with the V1 node protocol.
+Chain creation remains a high-level deploy concern. Opaque writes to an existing
+chain are available through the V1 prepare/submit admission path.
 
 ### `utx chain create`
 
@@ -627,9 +628,33 @@ utx push
 
 ### `utx chain emit`
 
-Arbitrary public transaction submission was removed from the V1 API. `utx chain emit` therefore fails explicitly instead of calling the obsolete `/chain/{id}/transaction` endpoint.
+```bash
+utx chain emit --chain_id <id> --content "<payload>"
+```
 
-Use a supported high-level deployment command such as `utx commit/push` or `utx graph update`.
+Sends one opaque transaction to an existing chain using the currently logged-in
+wallet.
+
+The command uses the V1 deploy admission protocol:
+
+```text
+prepare(kind=raw)
+  -> sign with current wallet
+  -> submit
+  -> pending/finalization
+```
+
+It does **not** call the removed legacy `/chain/{id}/transaction` endpoint.
+
+Example:
+
+```bash
+utx chain emit \
+  --chain_id <identity-chain> \
+  --content "urn:pi:capability:init:family-v1"
+```
+
+Raw mode cannot create a chain; the target chain must already exist.
 
 
 ## 17. Download from network (`utx download`)
