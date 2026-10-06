@@ -537,9 +537,10 @@ utx init
 
 utx login ~/.utx/wallet.json --target 127.0.0.1:8080
 
-# Or import the base64 identity config produced by `utx identity b64`.
+# Or import a base64 identity config from a file.
+# Keeping the secret out of argv avoids leaking it through shell history/process listings.
 # The embedded api_target is reused unless --target overrides it.
-utx login --b64 <identity_config>
+utx login --b64-file ./identity.b64
 
 mkdir -p web
 echo '<!doctype html><html><body>Hello</body></html>' > web/index.html
