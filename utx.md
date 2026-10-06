@@ -1,8 +1,8 @@
 # Utopixia CLI (`utx`)
-Version: 1.0 (long-form documentation, draft)  
-Last update: 2026-10-01
+Version: 1.1 (long-form documentation, draft)  
+Last update: 2026-10-06
 
-`utx` is the Git-like command-line tool for **Utopixia**: a distributed, multi-chain, **graph-native** infrastructure where code and data are stored as verifiable structures and can be reconstructed deterministically.
+`utx` is the deployment command-line tool for **Utopixia**: a distributed, multi-chain, **graph-native** infrastructure where code and data are stored as verifiable structures and can be reconstructed deterministically.
 
 This document is meant to be readable as a “real manual”, while staying faithful to the current reference implementation (C++23). If you are maintaining `utx`, you can treat this as a living spec.
 
@@ -20,17 +20,15 @@ This document is meant to be readable as a “real manual”, while staying fait
 8. Tracking files (`utx add`)
 9. Ignore rules (`.utxignore`, `utx ignore`)
 10. Status (`utx status`)
-11. Commit (`utx commit`) — structural diff, strategies, revision files
-12. Push (`utx push`) — segmentation, genesis, parallelism, partial pushes
-13. Uncommit (`utx uncommit`)
-14. API tools (`utx api`)
-15. Graph tools (`utx graph`)
-16. Chain tools (`utx chain`)
-17. Download from network (`utx download`)
-18. Practical workflows (examples)
-19. Troubleshooting and “why did this happen?”
-20. Security and determinism notes
-21. Glossary
+11. Deploy (`utx deploy`) — one-shot prepare / sign / submit
+12. API tools (`utx api`)
+13. Graph tools (`utx graph`)
+14. Chain tools (`utx chain`)
+15. Download from network (`utx download`)
+16. Practical workflows (examples)
+17. Troubleshooting and “why did this happen?”
+18. Security and determinism notes
+19. Glossary
 
 ---
 
@@ -38,7 +36,7 @@ This document is meant to be readable as a “real manual”, while staying fait
 
 ### What it is
 
-`utx` is a deployment protocol in CLI form. It prepares and emits blockchain payloads to Utopixia’s network, so that peers can reconstruct a **graph state** deterministically and serve or rebuild artifacts (web pages, code, identities…).
+`utx` is a thin deployment client. It tracks local targets and asks Utopixia nodes to prepare deployment plans, so that peers can reconstruct a **graph state** deterministically and serve or rebuild artifacts (web pages, code, identities…).
 
 The key thing is that `utx` versions **structure**, not text.
 
@@ -102,8 +100,7 @@ project/
 ├─ .utx.deploy.json         # Versioned deployment manifest (tracked targets)
 ├─ .utxignore               # Ignore rules (gitignore-like)
 ├─ .utx/
-│  ├─ config.json           # Local project config (wallet, api target, deploy chain)
-│  └─ revisions/            # Pending local commits (revision files)
+│  └─ config.json           # Local project config (wallet, api target, deploy chain)
 ├─ src/
 ├─ web/
 └─ ...
@@ -118,7 +115,6 @@ Each entry (“target”) contains:
 - `path`: path relative to repo root
 - `chain`: chain id (UUID-like string)
 - `kind`: the parser / projector kind (html/js/css/markdown/cpp/graph/identity)
-- `last_revision_id`: non-empty when a commit is staged for push
 - `last_synced_hash`: local hash used by `status`
 - `genesis_labels`: legacy manifest metadata; the current V1 deploy protocol does not carry custom genesis labels
 
@@ -132,17 +128,6 @@ Local session configuration:
 
 This file is local by nature and should not be committed.
 
-### Revision files: `.utx/revisions/rev_*.utx`
-
-A revision file is the output of `utx commit`. It is a **list of lines**, where each line is already a chain payload that `utx push` will broadcast.
-
-A revision file typically contains, for each modified target:
-
-- either a snapshot line: `urn:pi:graph:snap:<base64_json>`
-- or several action lines: `urn:pi:graph:action:<encoded_action>`
-- and finally one commit-tag line: `urn:pi:graph:action:T...` (a COMMIT_TAG action)
-
-The commit-tag line is what allows `utx push` to **route the preceding segment to the correct chain**.
 
 ---
 
@@ -164,7 +149,7 @@ You can run:
 utx --debug <command> ...
 ```
 
-This increases log verbosity and is useful when diagnosing commit/push behavior.
+This increases log verbosity and is useful when diagnosing deploy behavior.
 
 ---
 
@@ -271,7 +256,7 @@ Clears the local wallet reference. (It does not delete your wallet file.)
 - a kind (parser/projector),
 - a parser/projector kind supported by the current node deploy planner.
 
-After that, `utx status` and `utx commit` can include that target.
+After that, `utx status` and `utx deploy` can include that target.
 
 ### `utx add`
 
@@ -378,8 +363,7 @@ This is designed to be fast. It uses file hashes (MD5 in the current implementat
 It reports each tracked target in one of these states:
 
 - `CLEAN`: local file hash equals `last_synced_hash`
-- `MODIFIED`: local file hash differs; needs commit
-- `COMMITTED`: `last_revision_id` is set; ready to push
+- `MODIFIED`: local file hash differs; needs deploy
 - `DELETED`: tracked path missing on disk
 - `UNTRACKED`: files in the repo not present in the manifest (excluding ignored)
 
@@ -387,181 +371,36 @@ Important: `status` does not parse AST graphs and does not fetch remote chain st
 
 ---
 
-## 11. Commit workflow (`utx commit`)
+## 11. Deploy workflow (`utx deploy`)
 
-### `utx commit`
-
-```bash
-utx commit "message" [--force-snapshot] [--force-group-actions] [--group-action-size N] [--push]
-```
-
-A commit builds a local revision file. Nothing is pushed to the network unless you add `--push`.
-
-#### Options
-
-`--force-snapshot`  
-Forces snapshot strategy for modified targets.
-
-`--force-group-actions`  
-Forces incremental strategy (grouped actions) for modified targets.
-
-`--group-action-size N`  
-Controls how many primitive actions are packed into each GROUP action.
-
-`--push`  
-Automatically runs `utx push` after the revision is created.
-
-The two force flags are mutually exclusive.
-
----
-
-### What actually happens during commit (per target)
-
-For each tracked target file:
-
-1) **Hash check**  
-   If local hash equals `last_synced_hash`, the file is skipped.
-
-2) **Parse local file into graph**  
-   Parsing depends on `kind`:
-- html: HTML parser produces actions that rebuild a DOM graph
-- js: JS parser produces AST root element
-- css: CSS parser produces structured graph
-- cpp: C++ parser produces actions that rebuild an AST/token graph
-- graph: generic path (depends on your project’s graph format)
-
-3) **Fetch remote graph state**  
-   `utx` queries `/graph/<chain_id>` from the API.
-
-If the chain has no graph yet (not found / unreachable), the commit behaves as “first deploy”.
-
-4) **Compute structural diff**  
-   If remote exists: `diff = GraphDiffer::compute_diff(remote_root, local_root)`  
-   If remote does not exist: `diff` is produced by emitting actions that materialize the entire local graph under the root.
-
-5) **Batch and serialize incremental candidate**  
-   Actions are grouped into GROUP actions of up to `group_action_size`. Then serialized into lines:
-   `urn:pi:graph:action:<encoded_group_action>`
-
-6) **Build snapshot candidate**  
-   A snapshot is built by serializing the whole local graph to JSON and base64-encoding it:
-   `urn:pi:graph:snap:<base64_json>`
-
-7) **Choose strategy by size (unless forced)**  
-   Default rule: snapshot is used when its payload size is smaller than the incremental payload size.
-
-8) **Append a COMMIT_TAG action**  
-   A commit tag is always appended to end the segment for this target. It contains metadata including:
-- the target chain id
-- the file path
-- the selected strategy
-- per-target revision id (hash of this segment)
-- author address
-- timestamp
-- number of blocks that will be emitted for this segment
-
-9) **Write revision file**  
-   All per-target segments are concatenated into one revision file:
-   `.utx/revisions/rev_<global_rev_id_prefix>.utx`
-
-The global revision id is computed as a hash of the full revision content.
-
-10) **Update manifest**  
-    Targets that participated get `last_revision_id = <global_rev_id>`.  
-    The updated `.utx.deploy.json` is written.
-
----
-
-## 12. Push workflow (`utx push`)
-
-### `utx push`
+### `utx deploy`
 
 ```bash
-utx push
+utx deploy "message" [--force-snapshot]
 ```
 
-`utx push` reads the current revision file and broadcasts it to the network.
+A deploy is a **one-shot network operation**. There is no local committed-but-not-pushed state.
 
-### How a revision is segmented
+For every modified tracked target, `utx`:
 
-A revision file is a stream of payload lines. `utx push` groups these lines into **segments**.
+1. reads the current file and compares its local hash with `last_synced_hash`;
+2. sends the raw content, target kind, chain id and message to the node deploy protocol;
+3. receives the node-produced deployment plan;
+4. signs the planned transactions with the active wallet;
+5. submits them immediately;
+6. waits for the submitted blocks to reach `Finalized`;
+7. updates `last_synced_hash` only for targets that finalized successfully.
 
-A segment ends when a COMMIT_TAG action line is encountered (`urn:pi:graph:action:T...`).
+Modified chains are deployed concurrently and independently. A failure on one chain does not roll back successful chains.
 
-`utx push` decodes the COMMIT_TAG payload to extract:
+The node — not the CLI — owns parsing, graph diffing and snapshot/action strategy selection. `--force-snapshot` is a policy request forwarded to that planner.
 
-- `target_chain` (which chain to send the segment to)
-- `file_path` (for logs and local manifest updates)
+After all modified targets succeed, `utx` publishes the updated `.utx.deploy.json` to the project's `deploy_chain` through the same protocol using `kind=json`. This keeps `utx download` reconstructible without embedding a JSON-to-graph compiler in the CLI.
 
-This design has a nice property: the revision file itself is “self-routing”.
-
-### Chain creation (genesis) if missing
-
-For each chain, before sending segment blocks, `utx push` checks if the chain exists by fetching its last block. If it does not exist, it creates a genesis block.
-
-Genesis includes:
-- owners (the wallet address),
-- a projector name chosen from the target kind (Graph/Js/Web/Markdown/Cpp/Css/Identity),
-- labels.
-
-Default labels include:
-
-- `project:<repo_name>`
-- `kind:<kind>`
-- `path:<file_path>`
-
-Custom genesis labels from `.utx.deploy.json` are merged in (except identity targets).
-
-### Emitting blocks
-
-For each payload line in the segment, `utx push` emits a block with:
-
-- increasing index / nonce,
-- previous hash chaining,
-- timestamp,
-- payload data line as-is (the same `urn:...` string),
-- signature computed from the wallet.
-
-### Parallelism
-
-Push is parallelized across chains. Each chain segment can be pushed concurrently.
-
-Because each file is its own chain, this gives real throughput benefits.
-
-### Partial pushes
-
-If one chain fails to push (network error, node rejects block, etc.), other chains can still succeed.
-
-At the end:
-- `.utx.deploy.json` is saved with updated hashes for successful chains.
-- The revision may remain partially pending until you re-run `utx push`.
-
-### Post-success cleanup
-
-If **all chains** in the revision succeeded:
-
-1) The deploy manifest itself is snapshotted and pushed to the “deploy chain” (`deploy_chain` in `.utx/config.json`).
-2) Local cleanup runs:
-    - clears `last_revision_id` for all targets referencing this revision,
-    - deletes the revision file.
+A multi-chain deploy is not globally atomic. If one target fails, successful targets remain synchronized and the failed target remains `MODIFIED` for the next deploy.
 
 ---
-
-## 13. Uncommit (`utx uncommit`)
-
-### `utx uncommit`
-
-```bash
-utx uncommit
-```
-
-Deletes the pending revision file and clears `last_revision_id` in `.utx.deploy.json`.
-
-This is a local rollback of staging, not a network operation.
-
----
-
-## 14. API management (`utx api`)
+## 12. API management (`utx api`)
 
 ### `utx api set`
 
@@ -581,7 +420,7 @@ Queries the current API endpoint for reachable peers and prints cluster status.
 
 ---
 
-## 15. Graph tools (`utx graph`)
+## 13. Graph tools (`utx graph`)
 
 These are low-level utilities useful for debugging.
 
@@ -611,7 +450,7 @@ Emits a SET action to update one property on-chain.
 
 ---
 
-## 16. Chain tools (`utx chain`)
+## 14. Chain tools (`utx chain`)
 
 Chain creation remains a high-level deploy concern. Opaque writes to an existing
 chain are available through the V1 prepare/submit admission path.
@@ -622,8 +461,7 @@ Direct genesis submission was removed from the public node API. A chain is now c
 
 ```bash
 utx add web/index.html
-utx commit "first deploy"
-utx push
+utx deploy "first deploy"
 ```
 
 ### `utx chain emit`
@@ -657,7 +495,7 @@ utx chain emit \
 Raw mode cannot create a chain; the target chain must already exist.
 
 
-## 17. Download from network (`utx download`)
+## 15. Download from network (`utx download`)
 
 This command bootstraps a local workspace from the deploy manifest chain.
 
@@ -689,7 +527,7 @@ If the local project is not initialized yet, `utx download` still works because 
 
 ---
 
-## 18. Practical workflows
+## 16. Practical workflows
 
 ### A. Create a project and deploy a web page
 
@@ -705,8 +543,7 @@ echo '<!doctype html><html><body>Hello</body></html>' > web/index.html
 utx add web/index.html
 utx status
 
-utx commit "first deploy"
-utx push
+utx deploy "first deploy"
 ```
 
 After push, your `web/index.html` chain exists, and nodes can rebuild its DOM graph deterministically.
@@ -726,13 +563,12 @@ utx push
 ### C. Force snapshot for big structural changes
 
 ```bash
-utx commit "major refactor" --force-snapshot
-utx push
+utx deploy "major refactor" --force-snapshot
 ```
 
 ---
 
-## 19. Troubleshooting and “why did this happen?”
+## 17. Troubleshooting and “why did this happen?”
 
 ### “Why does `status` say CLEAN but the network is different?”
 
@@ -763,11 +599,11 @@ If `utx push` cannot fetch the last block (`/chain/<addr>/last` returns 404 or n
 
 ### “Push is partial. What should I do?”
 
-Run `utx push` again. The revision file remains until full success cleanup. Successful chains should have updated `last_synced_hash` already.
+Run `utx deploy` again. The revision file remains until full success cleanup. Successful chains should have updated `last_synced_hash` already.
 
 ---
 
-## 20. Security and determinism notes
+## 18. Security and determinism notes
 
 - `utx` relies on deterministic parsers and deterministic action application. If parsers are not stable, structural diffs can become noisy.
 - The tool signs every emitted block using the active wallet. Keep wallet files safe.
@@ -777,7 +613,7 @@ A key philosophical point: the system guarantees deterministic replay, not canon
 
 ---
 
-## 21. Glossary
+## 19. Glossary
 
 **Target**: an entry in `.utx.deploy.json` representing one deployable artifact.  
 **Kind**: a parser/projector family (html/js/css/markdown/cpp/graph/identity).  
