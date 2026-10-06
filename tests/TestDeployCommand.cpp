@@ -170,3 +170,68 @@ TEST(DeployCommandTest, DeploysModifiedTargetAndMarksItSyncedAfterFinalization) 
 }
 
 } // namespace
+
+
+TEST(DeployCommandTest, PublishesProjectManifestThroughJsonDeployPlanner) {
+    LocalDeployServer http;
+    nlohmann::json captured_prepare;
+    std::atomic<int> submit_calls{0};
+
+    http.server.Post(
+        "/api/deploy/prepare",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            captured_prepare = nlohmann::json::parse(req.body);
+            res.set_content(
+                nlohmann::json{
+                    {"plan_id", "manifest-plan"},
+                    {"transactions", nlohmann::json::array()}
+                }.dump(),
+                "application/json"
+            );
+        }
+    );
+
+    http.server.Post(
+        "/api/deploy/submit",
+        [&](const httplib::Request&, httplib::Response& res) {
+            ++submit_calls;
+            res.status = 500;
+        }
+    );
+
+    http.start();
+
+    TempProject project;
+    AppContext ctx;
+    ctx.root = project.root;
+    ctx.project_config.api_target = http.base_url();
+    ctx.project_config.deploy_chain = "manifest-chain";
+    ctx.wallet = WalletHelper::generate_keypair();
+    ctx.network_client.target = http.base_url();
+
+    ASSERT_TRUE(
+        utx::app::infrastructure::deploy::DeployConfigManager::save_deploy_config_atomic(
+            ctx.root,
+            ctx.deploy_config
+        ).has_value()
+    );
+
+    const auto manifest_content =
+        utx::common::io::read_file(
+            (project.root / utx::app::infrastructure::deploy::kDeployFile).string()
+        );
+
+    const int rc = DeployCommand(std::move(ctx)).execute(
+        {"utx", "deploy", "sync manifest"}
+    );
+
+    ASSERT_EQ(rc, 0);
+    ASSERT_FALSE(captured_prepare.is_null());
+    EXPECT_EQ(captured_prepare.at("chain_id"), "manifest-chain");
+    EXPECT_EQ(captured_prepare.at("file_path"), ".utx.deploy.json");
+    EXPECT_EQ(captured_prepare.at("kind"), "json");
+    EXPECT_EQ(captured_prepare.at("content"), manifest_content);
+    EXPECT_EQ(captured_prepare.at("commit_message"), "sync manifest [manifest]");
+    EXPECT_FALSE(captured_prepare.at("force_snapshot").get<bool>());
+    EXPECT_EQ(submit_calls.load(), 0);
+}
