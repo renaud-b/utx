@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cctype>
 #include <expected>
 #include <filesystem>
 #include <fstream>
@@ -18,7 +20,7 @@ namespace utx::app::use_case {
     /** cmd_login : Log in to a wallet and set it as the active session.
      *
      * utx login <wallet_path> [--target <api>]
-     * utx login --b64 <identity_config> [--target <api>]
+     * utx login --b64-file <identity_config_file> [--target <api>]
      */
     class LoginCommand final : public AbstractCommand {
     public:
@@ -33,13 +35,13 @@ namespace utx::app::use_case {
                 return 1;
             }
 
-            const bool import_b64 = args[2] == "--b64";
-            if (import_b64 && args.size() < 4) {
+            const bool import_b64_file = args[2] == "--b64-file";
+            if (import_b64_file && args.size() < 4) {
                 print_usage();
                 return 1;
             }
 
-            const std::size_t options_begin = import_b64 ? 4 : 3;
+            const std::size_t options_begin = import_b64_file ? 4 : 3;
             std::optional<std::string> target_override;
             for (std::size_t i = options_begin; i < args.size(); ++i) {
                 if (args[i] == "--target" && i + 1 < args.size()) {
@@ -51,8 +53,18 @@ namespace utx::app::use_case {
             std::filesystem::path wallet_path;
             std::string target = "127.0.0.1:8080";
 
-            if (import_b64) {
-                const auto imported = decode_identity_config(args[3]);
+            if (import_b64_file) {
+                const auto encoded = read_identity_config_file(args[3]);
+                if (!encoded) {
+                    LOG_THIS_ERROR(
+                        "❌ Failed to read identity config file '{}': {}",
+                        args[3],
+                        encoded.error()
+                    );
+                    return 1;
+                }
+
+                const auto imported = decode_identity_config(*encoded);
                 if (!imported) {
                     LOG_THIS_ERROR(
                         "❌ Failed to import identity config: {}",
@@ -153,11 +165,41 @@ namespace utx::app::use_case {
                 "Usage: utx login <wallet_path> [--target <api>]"
             );
             LOG_THIS_INFO(
-                "       utx login --b64 <identity_config> [--target <api>]"
+                "       utx login --b64-file <identity_config_file> [--target <api>]"
             );
             LOG_THIS_INFO(
                 "--target <api> : Override the API target stored in the identity config."
             );
+        }
+
+        static std::expected<std::string, std::string>
+        read_identity_config_file(const std::filesystem::path& path) {
+            std::ifstream in(path, std::ios::binary);
+            if (!in) {
+                return std::unexpected("cannot open file");
+            }
+
+            std::string encoded{
+                std::istreambuf_iterator<char>{in},
+                std::istreambuf_iterator<char>{}
+            };
+
+            encoded.erase(
+                std::remove_if(
+                    encoded.begin(),
+                    encoded.end(),
+                    [](const unsigned char ch) {
+                        return std::isspace(ch) != 0;
+                    }
+                ),
+                encoded.end()
+            );
+
+            if (encoded.empty()) {
+                return std::unexpected("identity config file is empty");
+            }
+
+            return encoded;
         }
 
         static std::expected<ImportedIdentity, std::string>
