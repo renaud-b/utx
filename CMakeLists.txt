@@ -84,6 +84,7 @@ if (BUILD_TESTING)
     add_executable(utx_tests
             tests/TestDeployClient.cpp
             tests/TestDeployCommand.cpp
+            tests/TestResetCommand.cpp
             infrastructure/deploy_config/DeployClient.cpp
             domain/Types.cpp
             common/Hash.cpp
