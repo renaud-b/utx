@@ -44,105 +44,16 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(httplib)
 
-FetchContent_Declare(
-        tree_sitter_runtime
-        GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter.git
-        GIT_TAG v0.25.3
-)
-
-FetchContent_Declare(
-        tree_sitter_html_grammar
-        GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-html.git
-        GIT_TAG v0.23.2
-)
-
-FetchContent_Declare(
-        tree_sitter_css_grammar
-        GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-css.git
-        GIT_TAG v0.23.2
-)
-
-FetchContent_Declare(
-        tree_sitter_javascript_grammar
-        GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-javascript.git
-        GIT_TAG v0.25.0
-)
-
-FetchContent_Declare(
-        tree_sitter_go_grammar
-        GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter-go.git
-        GIT_TAG v0.23.4
-)
-
-
-FetchContent_MakeAvailable(tree_sitter_runtime)
-
-FetchContent_GetProperties(tree_sitter_html_grammar)
-if (NOT tree_sitter_html_grammar_POPULATED)
-    FetchContent_Populate(tree_sitter_html_grammar)
-endif ()
-
-FetchContent_GetProperties(tree_sitter_css_grammar)
-if (NOT tree_sitter_css_grammar_POPULATED)
-    FetchContent_Populate(tree_sitter_css_grammar)
-endif ()
-
-FetchContent_GetProperties(tree_sitter_javascript_grammar)
-if (NOT tree_sitter_javascript_grammar_POPULATED)
-    FetchContent_Populate(tree_sitter_javascript_grammar)
-endif ()
-
-FetchContent_GetProperties(tree_sitter_go_grammar)
-if (NOT tree_sitter_go_grammar_POPULATED)
-    FetchContent_Populate(tree_sitter_go_grammar)
-endif ()
-
-add_library(tree-sitter STATIC
-        ${tree_sitter_runtime_SOURCE_DIR}/lib/src/lib.c
-)
-target_include_directories(tree-sitter PUBLIC
-        ${tree_sitter_runtime_SOURCE_DIR}/lib/include
-)
-
-function(add_tree_sitter_grammar target_name grammar_source_dir)
-    set(grammar_sources
-            ${grammar_source_dir}/src/parser.c
-    )
-
-    if (EXISTS "${grammar_source_dir}/src/scanner.c")
-        list(APPEND grammar_sources "${grammar_source_dir}/src/scanner.c")
-    endif ()
-
-    if (EXISTS "${grammar_source_dir}/src/scanner.cc")
-        list(APPEND grammar_sources "${grammar_source_dir}/src/scanner.cc")
-    endif ()
-
-    add_library(${target_name} STATIC ${grammar_sources})
-    target_include_directories(${target_name} PUBLIC
-            ${tree_sitter_runtime_SOURCE_DIR}/lib/include
-            ${grammar_source_dir}/src
-    )
-    target_link_libraries(${target_name} PUBLIC tree-sitter)
-endfunction()
-
-add_tree_sitter_grammar(tree-sitter-html ${tree_sitter_html_grammar_SOURCE_DIR})
-add_tree_sitter_grammar(tree-sitter-css ${tree_sitter_css_grammar_SOURCE_DIR})
-add_tree_sitter_grammar(tree-sitter-javascript ${tree_sitter_javascript_grammar_SOURCE_DIR})
-add_tree_sitter_grammar(tree-sitter-go ${tree_sitter_go_grammar_SOURCE_DIR})
 
 add_executable(utx
         main.cpp
         domain/Types.cpp
-        infrastructure/parser/GraphParser.cpp
         common/Uuid.cpp
         common/Hash.cpp
         domain/graph/Graph.cpp
         domain/graph/GraphElement.cpp
-        domain/graph/GraphDiffer.cpp
         domain/graph/Action.cpp
-        infrastructure/languages/javascript/JsParser.cpp
         infrastructure/languages/javascript/JsGenerator.cpp
-        infrastructure/blackhole/BlackholeRebuilder.cpp
         infrastructure/crypto/OpenSSLCryptoService.cpp
         infrastructure/deploy_config/DeployClient.cpp
 )
@@ -155,11 +66,6 @@ target_link_libraries(utx
         httplib::httplib
         spdlog::spdlog
         ${SODIUM_LIB}
-        tree-sitter
-        tree-sitter-html
-        tree-sitter-css
-        tree-sitter-javascript
-        tree-sitter-go
 )
 
 
@@ -193,12 +99,7 @@ if (BUILD_TESTING)
             spdlog::spdlog
             ${SODIUM_LIB}
             GTest::gtest_main
-            tree-sitter
-            tree-sitter-html
-            tree-sitter-css
-            tree-sitter-javascript
-            tree-sitter-go
-    )
+                        )
 
     include(GoogleTest)
     gtest_discover_tests(utx_tests)
