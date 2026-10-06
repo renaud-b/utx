@@ -104,33 +104,29 @@ public:
             });
         }
 
-        if (work.empty()) {
-            LOG_THIS_INFO("✨ Nothing to deploy.");
-            return 0;
-        }
-
-        LOG_THIS_INFO(
-            "🚀 Deploying {} modified chain(s) with up to {} workers...",
-            work.size(),
-            std::min(kMaxThreads, work.size())
-        );
-
         std::mutex config_mutex;
         std::atomic<size_t> succeeded{0};
         std::atomic<size_t> failed{0};
 
-        const size_t worker_count = std::max<size_t>(
-            1,
-            std::min(kMaxThreads, work.size())
-        );
+        if (!work.empty()) {
+            LOG_THIS_INFO(
+                "🚀 Deploying {} modified chain(s) with up to {} workers...",
+                work.size(),
+                std::min(kMaxThreads, work.size())
+            );
 
-        common::ThreadPool pool(worker_count);
-        std::vector<std::future<void>> futures;
-        futures.reserve(work.size());
+            const size_t worker_count = std::max<size_t>(
+                1,
+                std::min(kMaxThreads, work.size())
+            );
 
-        for (const auto& item : work) {
-            futures.emplace_back(
-                pool.enqueue([&, item]() {
+            common::ThreadPool pool(worker_count);
+            std::vector<std::future<void>> futures;
+            futures.reserve(work.size());
+
+            for (const auto& item : work) {
+                futures.emplace_back(
+                    pool.enqueue([&, item]() {
                     auto client = ctx_.deploy_client();
 
                     domain::DeployRequest request;
@@ -175,12 +171,13 @@ public:
                         item.target.path,
                         item.target.chain
                     );
-                })
-            );
-        }
+                    })
+                );
+            }
 
-        for (auto& future : futures) {
-            future.get();
+            for (auto& future : futures) {
+                future.get();
+            }
         }
 
         const auto saved =
@@ -199,11 +196,13 @@ public:
             return 1;
         }
 
-        LOG_THIS_INFO(
-            "🎯 Deploy complete: {}/{} chain(s) finalized.",
-            succeeded.load(),
-            work.size()
-        );
+        if (!work.empty()) {
+            LOG_THIS_INFO(
+                "🎯 Deploy complete: {}/{} chain(s) finalized.",
+                succeeded.load(),
+                work.size()
+            );
+        }
 
         if (failed.load() != 0) {
             LOG_THIS_WARN(
@@ -215,10 +214,57 @@ public:
             return 1;
         }
 
+        if (const auto manifest_result = deploy_manifest(commit_message, force_snapshot);
+            manifest_result != 0) {
+            return manifest_result;
+        }
+
+        if (work.empty()) {
+            LOG_THIS_INFO("✨ Nothing else to deploy.");
+        }
+
         return 0;
     }
 
 private:
+    int deploy_manifest(
+        const std::string& commit_message,
+        const bool force_snapshot
+    ) {
+        if (ctx_.project_config.deploy_chain.empty()) {
+            return 0;
+        }
+
+        domain::DeployRequest request;
+        request.chain_id = ctx_.project_config.deploy_chain;
+        request.file_path = infrastructure::deploy::kDeployFile;
+        request.kind = "json";
+        request.content = common::io::read_file(
+            (ctx_.root / infrastructure::deploy::kDeployFile).string()
+        );
+        request.commit_message = commit_message + " [manifest]";
+        request.force_snapshot = force_snapshot;
+
+        LOG_THIS_INFO(
+            "  📋 Syncing project manifest -> {}",
+            request.chain_id
+        );
+
+        auto client = ctx_.deploy_client();
+        const auto result = client.deploy(request, *ctx_.wallet);
+        if (!result) {
+            LOG_THIS_ERROR(
+                "  ❌ Manifest deploy failed [{}]: {}",
+                request.chain_id,
+                result.error()
+            );
+            return 1;
+        }
+
+        LOG_THIS_INFO("  ✅ Project manifest synchronized.");
+        return 0;
+    }
+
     infrastructure::context::AppContext ctx_;
 };
 
