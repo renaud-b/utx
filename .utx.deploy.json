@@ -510,6 +510,13 @@
             "kind": "cpp",
             "last_synced_hash": "ff4e7503b558e29d778a12903dea7000",
             "path": "common/ThreadPool.hpp"
+        },
+        {
+            "chain": "AZ3RstSyncState0000000",
+            "genesis_labels": [],
+            "kind": "cpp",
+            "last_synced_hash": "",
+            "path": "use_case/ResetCommand.hpp"
         }
     ],
     "version": 1
