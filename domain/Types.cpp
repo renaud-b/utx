@@ -17,6 +17,7 @@ std::string to_string(TargetKind k) {
         case TargetKind::Graph: return "graph";
         case TargetKind::Cpp: return "cpp";
         case TargetKind::Identity: return "identity";
+        case TargetKind::Json: return "json";
         default: return "unknown";
     }
 }
@@ -31,6 +32,7 @@ std::optional<TargetKind> parse_kind(std::string s) {
     if (s == "go" || s == "golang") return TargetKind::Go;
     if (s == "graph") return TargetKind::Graph;
     if (s == "identity") return TargetKind::Identity;
+    if (s == "json") return TargetKind::Json;
     return std::nullopt;
 }
 
