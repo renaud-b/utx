@@ -27,13 +27,18 @@ public:
         }
 
         size_t invalidated = 0;
+        size_t legacy_label_targets_cleared = 0;
+
         for (auto& target : ctx_.deploy_config.targets) {
-            if (target.last_synced_hash.empty()) {
-                continue;
+            if (!target.last_synced_hash.empty()) {
+                target.last_synced_hash.clear();
+                ++invalidated;
             }
 
-            target.last_synced_hash.clear();
-            ++invalidated;
+            if (!target.genesis_labels.empty()) {
+                target.genesis_labels.clear();
+                ++legacy_label_targets_cleared;
+            }
         }
 
         const auto saved =
@@ -52,13 +57,19 @@ public:
             return 1;
         }
 
-        if (invalidated == 0) {
+        if (invalidated == 0 && legacy_label_targets_cleared == 0) {
             LOG_THIS_INFO("♻️ Local synchronization state was already reset.");
         } else {
             LOG_THIS_INFO(
                 "♻️ Local synchronization state reset: {} tracked target(s) marked for redeployment.",
                 invalidated
             );
+            if (legacy_label_targets_cleared != 0) {
+                LOG_THIS_INFO(
+                    "   Removed unsupported legacy genesis labels from {} target(s).",
+                    legacy_label_targets_cleared
+                );
+            }
         }
 
         LOG_THIS_INFO(
