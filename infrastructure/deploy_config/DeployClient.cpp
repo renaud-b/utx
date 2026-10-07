@@ -250,6 +250,7 @@ namespace utx::app::infrastructure::deploy {
 
                     if (signed_tx.sender.to_string() != wallet.address ||
                         signed_tx.receiver.to_string() != chain_id ||
+                        signed_tx.sender_public_key != wallet.public_key_hex ||
                         signed_tx.data != payload) {
                         return std::unexpected(
                             "Pending deploy submission cache transaction mismatch"
@@ -638,8 +639,19 @@ namespace utx::app::infrastructure::deploy {
         const auto& transactions = plan.at("transactions");
 
         // A prepare that finds no structural change is already complete:
-        // there is nothing to admit or finalize.
+        // there is nothing to admit or finalize. Any cached submit for this
+        // plan is stale from the client's point of view and can be removed.
         if (transactions.empty()) {
+            if (const auto cleared =
+                    clear_pending_submission(plan_id);
+                !cleared) {
+                LOG_THIS_WARN(
+                    "Empty deploy plan completed but pending submission cache "
+                    "could not be cleared: {}",
+                    cleared.error()
+                );
+            }
+
             return domain::DeployResult{
                 .success = true,
                 .plan_id = plan_id
