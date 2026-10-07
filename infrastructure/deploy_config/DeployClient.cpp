@@ -1,5 +1,9 @@
+#include <array>
 #include <chrono>
+#include <filesystem>
 #include <format>
+#include <fstream>
+#include <mutex>
 #include <random>
 #include <thread>
 
@@ -7,6 +11,7 @@
 
 #include "DeployClient.hpp"
 #include "common/Hash.hpp"
+#include "common/Logger.hpp"
 #include "common/ScopedTimer.hpp"
 #include "common/Uuid.hpp"
 #include "infrastructure/crypto/OpenSSLCryptoService.hpp"
@@ -14,6 +19,23 @@
 namespace utx::app::infrastructure::deploy {
 
     namespace {
+        constexpr std::array kSubmitRetryDelays{
+            std::chrono::milliseconds(100),
+            std::chrono::milliseconds(300),
+            std::chrono::milliseconds(700)
+        };
+
+        std::mutex pending_submission_mutex;
+
+        [[nodiscard]]
+        bool is_retryable_submit_status(const int status) {
+            return status == 408 ||
+                   status == 429 ||
+                   status == 502 ||
+                   status == 503 ||
+                   status == 504;
+        }
+
         std::expected<utx::domain::model::SignedTransaction, std::string>
         build_signed_tx_for_receiver(
             const std::string& payload,
@@ -50,8 +72,230 @@ namespace utx::app::infrastructure::deploy {
         }
     }
 
-    DeployClient::DeployClient(std::string base_url)
-        : base_url_(std::move(base_url)) {}
+    DeployClient::DeployClient(
+        std::string base_url,
+        std::optional<std::filesystem::path> state_root
+    )
+        : base_url_(std::move(base_url)),
+          state_root_(std::move(state_root)) {}
+
+    std::optional<std::filesystem::path>
+    DeployClient::pending_submission_path(
+        const std::string& plan_id
+    ) const {
+        if (!state_root_) {
+            return std::nullopt;
+        }
+
+        return *state_root_ /
+            ".utx" /
+            "pending-deploy-submissions" /
+            (common::sha256_hex(plan_id) + ".json");
+    }
+
+    std::expected<void, std::string>
+    DeployClient::persist_pending_submission(
+        const std::string& plan_id,
+        const std::string& chain_id,
+        const nlohmann::json& ring_reference,
+        const nlohmann::json& signed_txs
+    ) const {
+        const auto path = pending_submission_path(plan_id);
+        if (!path) {
+            return {};
+        }
+
+        try {
+            std::filesystem::create_directories(path->parent_path());
+
+            const auto tmp =
+                path->string() + ".tmp-" +
+                common::generate_uuid_v7().to_string();
+
+            {
+                std::ofstream out(tmp, std::ios::trunc);
+                if (!out) {
+                    return std::unexpected(
+                        "Failed to open pending deploy submission temp file: " +
+                        tmp
+                    );
+                }
+
+                out << nlohmann::json{
+                    {"version", 1},
+                    {"plan_id", plan_id},
+                    {"chain_id", chain_id},
+                    {"ring_reference", ring_reference},
+                    {"signed_transactions", signed_txs}
+                }.dump(2);
+                out.flush();
+
+                if (!out) {
+                    return std::unexpected(
+                        "Failed to write pending deploy submission temp file: " +
+                        tmp
+                    );
+                }
+            }
+
+            std::error_code ec;
+            std::filesystem::rename(tmp, *path, ec);
+            if (ec) {
+                std::error_code ignored;
+                std::filesystem::remove(*path, ignored);
+                std::filesystem::rename(tmp, *path, ec);
+            }
+
+            if (ec) {
+                std::error_code ignored;
+                std::filesystem::remove(tmp, ignored);
+                return std::unexpected(
+                    "Failed to persist pending deploy submission: " +
+                    ec.message()
+                );
+            }
+
+            return {};
+        } catch (const std::exception& e) {
+            return std::unexpected(
+                std::string(
+                    "Failed to persist pending deploy submission: "
+                ) + e.what()
+            );
+        }
+    }
+
+    std::expected<void, std::string>
+    DeployClient::clear_pending_submission(
+        const std::string& plan_id
+    ) const {
+        const auto path = pending_submission_path(plan_id);
+        if (!path) {
+            return {};
+        }
+
+        try {
+            std::lock_guard lock(pending_submission_mutex);
+            std::error_code ec;
+            std::filesystem::remove(*path, ec);
+            if (ec) {
+                return std::unexpected(
+                    "Failed to clear pending deploy submission: " +
+                    ec.message()
+                );
+            }
+            return {};
+        } catch (const std::exception& e) {
+            return std::unexpected(
+                std::string(
+                    "Failed to clear pending deploy submission: "
+                ) + e.what()
+            );
+        }
+    }
+
+    std::expected<nlohmann::json, std::string>
+    DeployClient::load_or_create_signed_transactions(
+        const std::string& plan_id,
+        const std::string& chain_id,
+        const nlohmann::json& ring_reference,
+        const nlohmann::json& transactions,
+        const infra::wallet::KeyPair& wallet
+    ) const {
+        std::lock_guard lock(pending_submission_mutex);
+
+        const auto path = pending_submission_path(plan_id);
+        if (path && std::filesystem::exists(*path)) {
+            try {
+                std::ifstream in(*path);
+                if (!in) {
+                    return std::unexpected(
+                        "Failed to open pending deploy submission: " +
+                        path->string()
+                    );
+                }
+
+                const auto cached = nlohmann::json::parse(in);
+
+                if (cached.value("version", 0) != 1 ||
+                    cached.value("plan_id", "") != plan_id ||
+                    cached.value("chain_id", "") != chain_id ||
+                    !cached.contains("ring_reference") ||
+                    cached.at("ring_reference") != ring_reference ||
+                    !cached.contains("signed_transactions") ||
+                    !cached.at("signed_transactions").is_array()) {
+                    return std::unexpected(
+                        "Pending deploy submission cache does not match prepared plan"
+                    );
+                }
+
+                const auto& signed_txs =
+                    cached.at("signed_transactions");
+
+                if (signed_txs.size() != transactions.size()) {
+                    return std::unexpected(
+                        "Pending deploy submission cache transaction count mismatch"
+                    );
+                }
+
+                for (std::size_t i = 0; i < transactions.size(); ++i) {
+                    const auto payload =
+                        transactions.at(i)
+                            .at("payload_data")
+                            .get<std::string>();
+
+                    const auto signed_tx =
+                        signed_txs.at(i)
+                            .get<utx::domain::model::SignedTransaction>();
+
+                    if (signed_tx.sender.to_string() != wallet.address ||
+                        signed_tx.receiver.to_string() != chain_id ||
+                        signed_tx.data != payload) {
+                        return std::unexpected(
+                            "Pending deploy submission cache transaction mismatch"
+                        );
+                    }
+                }
+
+                return signed_txs;
+            } catch (const std::exception& e) {
+                return std::unexpected(
+                    std::string(
+                        "Failed to load pending deploy submission: "
+                    ) + e.what()
+                );
+            }
+        }
+
+        nlohmann::json signed_txs = nlohmann::json::array();
+        for (const auto& tx : transactions) {
+            const auto payload =
+                tx.at("payload_data").get<std::string>();
+
+            auto signed_tx_res =
+                build_signed_tx(payload, chain_id, wallet);
+
+            if (!signed_tx_res) {
+                return std::unexpected(signed_tx_res.error());
+            }
+
+            signed_txs.push_back(
+                std::move(signed_tx_res.value())
+            );
+        }
+
+        const auto persisted = persist_pending_submission(
+            plan_id,
+            chain_id,
+            ring_reference,
+            signed_txs
+        );
+        if (!persisted) {
+            return std::unexpected(persisted.error());
+        }
+
+        return signed_txs;
+    }
 
     std::expected<nlohmann::json, std::string>
     DeployClient::prepare(const domain::DeployRequest& req, const std::string& sender)
@@ -120,28 +364,41 @@ namespace utx::app::infrastructure::deploy {
         const nlohmann::json& ring_reference,
         const nlohmann::json& signed_txs
     ) {
-        httplib::Client cli(base_url_);
-        cli.set_read_timeout(60, 0);
-        cli.set_connection_timeout(10, 0);
-
-        nlohmann::json body = {
+        const nlohmann::json body = {
             {"plan_id", plan_id},
             {"ring_reference", ring_reference},
             {"chain_id", chain_id},
             {"signed_transactions", signed_txs}
         };
+        const auto serialized_body = body.dump();
 
-        return common::ScopedTimer::measure(
-            std::format("DeployClient::submit - HTTP POST {}/api/deploy/submit", base_url_),
-            std::chrono::milliseconds(50),
-            [&]() -> std::expected<DeploySubmission, std::string> {
-                auto res = cli.Post(
-                    "/api/deploy/submit",
-                    body.dump(),
-                    "application/json"
-                );
+        const auto attempt_count =
+            kSubmitRetryDelays.size() + 1;
 
-                if (!res) {
+        for (std::size_t attempt = 0;
+             attempt < attempt_count;
+             ++attempt) {
+            httplib::Client cli(base_url_);
+            cli.set_read_timeout(60, 0);
+            cli.set_connection_timeout(10, 0);
+
+            auto res = common::ScopedTimer::measure(
+                std::format(
+                    "DeployClient::submit - HTTP POST {}/api/deploy/submit",
+                    base_url_
+                ),
+                std::chrono::milliseconds(50),
+                [&]() {
+                    return cli.Post(
+                        "/api/deploy/submit",
+                        serialized_body,
+                        "application/json"
+                    );
+                }
+            );
+
+            if (!res) {
+                if (attempt + 1 == attempt_count) {
                     return std::unexpected(
                         std::format(
                             "HTTP error (submit): {}",
@@ -150,52 +407,75 @@ namespace utx::app::infrastructure::deploy {
                     );
                 }
 
-                if (res->status != 202) {
-                    return std::unexpected(
-                        std::format(
-                            "Submit failed: HTTP {} - {}",
-                            res->status,
-                            res->body
-                        )
-                    );
-                }
-
-                try {
-                    const auto response = nlohmann::json::parse(res->body);
-                    const auto status = response.value("status", "");
-
-                    if (status != "queued" && status != "partially_queued") {
-                        return std::unexpected(
-                            "Invalid submit response: unexpected status '" +
-                            status + "'"
-                        );
-                    }
-
-                    if (!response.contains("pending_block_ids") ||
-                        !response.at("pending_block_ids").is_array()) {
-                        return std::unexpected(
-                            "Invalid submit response: missing pending_block_ids"
-                        );
-                    }
-
-                    DeploySubmission submission;
-                    submission.pending_block_ids =
-                        response.at("pending_block_ids")
-                            .get<std::vector<std::string>>();
-
-                    if (response.contains("admission_error") &&
-                        response.at("admission_error").is_string()) {
-                        submission.admission_error =
-                            response.at("admission_error").get<std::string>();
-                    }
-
-                    return submission;
-                } catch (const std::exception& e) {
-                    return std::unexpected(
-                        std::string("Invalid submit response: ") + e.what()
-                    );
-                }
+                std::this_thread::sleep_for(
+                    kSubmitRetryDelays.at(attempt)
+                );
+                continue;
             }
+
+            if (res->status != 202) {
+                if (is_retryable_submit_status(res->status) &&
+                    attempt + 1 < attempt_count) {
+                    std::this_thread::sleep_for(
+                        kSubmitRetryDelays.at(attempt)
+                    );
+                    continue;
+                }
+
+                return std::unexpected(
+                    std::format(
+                        "Submit failed: HTTP {} - {}",
+                        res->status,
+                        res->body
+                    )
+                );
+            }
+
+            try {
+                const auto response =
+                    nlohmann::json::parse(res->body);
+                const auto status =
+                    response.value("status", "");
+
+                if (status != "queued" &&
+                    status != "partially_queued") {
+                    return std::unexpected(
+                        "Invalid submit response: unexpected status '" +
+                        status + "'"
+                    );
+                }
+
+                if (!response.contains("pending_block_ids") ||
+                    !response.at("pending_block_ids").is_array()) {
+                    return std::unexpected(
+                        "Invalid submit response: missing pending_block_ids"
+                    );
+                }
+
+                DeploySubmission submission;
+                submission.pending_block_ids =
+                    response.at("pending_block_ids")
+                        .get<std::vector<std::string>>();
+
+                if (response.contains("admission_error") &&
+                    response.at("admission_error").is_string()) {
+                    submission.admission_error =
+                        response.at("admission_error")
+                            .get<std::string>();
+                }
+
+                return submission;
+            } catch (const std::exception& e) {
+                return std::unexpected(
+                    std::string(
+                        "Invalid submit response: "
+                    ) + e.what()
+                );
+            }
+        }
+
+        return std::unexpected(
+            "Submit failed without a terminal response"
         );
     }
 
@@ -373,23 +653,20 @@ namespace utx::app::infrastructure::deploy {
             );
         }
 
-        nlohmann::json signed_txs = nlohmann::json::array();
-
-        for (const auto& tx : transactions) {
-            const auto payload =
-                tx.at("payload_data").get<std::string>();
-
-            auto signed_tx_res =
-                build_signed_tx(payload, req.chain_id, wallet);
-
-            if (!signed_tx_res) {
-                return std::unexpected(signed_tx_res.error());
-            }
-
-            signed_txs.push_back(
-                std::move(signed_tx_res.value())
+        auto signed_txs_res =
+            load_or_create_signed_transactions(
+                plan_id,
+                req.chain_id,
+                plan.at("ring_reference"),
+                transactions,
+                wallet
             );
+
+        if (!signed_txs_res) {
+            return std::unexpected(signed_txs_res.error());
         }
+
+        const auto& signed_txs = *signed_txs_res;
 
         auto submit_res = submit(
             plan_id,
@@ -430,6 +707,15 @@ namespace utx::app::infrastructure::deploy {
                     submit_res->pending_block_ids.size(),
                     signed_txs.size()
                 )
+            );
+        }
+
+        if (const auto cleared =
+                clear_pending_submission(plan_id);
+            !cleared) {
+            LOG_THIS_WARN(
+                "Deploy finalized but pending submission cache could not be cleared: {}",
+                cleared.error()
             );
         }
 
