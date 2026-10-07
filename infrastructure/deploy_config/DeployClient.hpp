@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <expected>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
@@ -28,7 +29,10 @@ namespace utx::app::infrastructure::deploy {
 
     class DeployClient {
     public:
-        explicit DeployClient(std::string base_url);
+        explicit DeployClient(
+            std::string base_url,
+            std::optional<std::filesystem::path> state_root = std::nullopt
+        );
 
         [[nodiscard]]
         std::expected<domain::DeployResult, std::string>
@@ -71,6 +75,38 @@ namespace utx::app::infrastructure::deploy {
                         const infra::wallet::KeyPair& wallet);
 
     private:
+        [[nodiscard]]
+        std::expected<nlohmann::json, std::string>
+        load_or_create_signed_transactions(
+            const std::string& plan_id,
+            const std::string& chain_id,
+            const nlohmann::json& ring_reference,
+            const nlohmann::json& transactions,
+            const infra::wallet::KeyPair& wallet
+        ) const;
+
+        [[nodiscard]]
+        std::expected<void, std::string>
+        persist_pending_submission(
+            const std::string& plan_id,
+            const std::string& chain_id,
+            const nlohmann::json& ring_reference,
+            const nlohmann::json& signed_txs
+        ) const;
+
+        [[nodiscard]]
+        std::expected<void, std::string>
+        clear_pending_submission(
+            const std::string& plan_id
+        ) const;
+
+        [[nodiscard]]
+        std::optional<std::filesystem::path>
+        pending_submission_path(
+            const std::string& plan_id
+        ) const;
+
         std::string base_url_;
+        std::optional<std::filesystem::path> state_root_;
     };
 }
