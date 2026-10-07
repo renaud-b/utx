@@ -38,7 +38,10 @@ namespace utx::app::infrastructure::context {
 
         [[nodiscard]]
         deploy::DeployClient deploy_client() const {
-            return deploy::DeployClient(project_config.api_target);
+            return deploy::DeployClient(
+                project_config.api_target,
+                root
+            );
         }
     };
 
