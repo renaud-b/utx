@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -9,6 +10,7 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include "common/Uuid.hpp"
 #include "infrastructure/deploy_config/DeployClient.hpp"
 #include "infrastructure/wallet/WalletHelper.hpp"
 
@@ -177,6 +179,236 @@ TEST(DeployClientTest, DeploySubmitsRingReferenceAndWaitsForFinalization) {
     );
 }
 
+
+TEST(DeployClientTest, DurableSubmissionReusesExactSignedTransactionsAfterClientRecreation) {
+    LocalHttpServer http;
+
+    const nlohmann::json ring_reference = {
+        {"version", "ring-v1"}
+    };
+
+    std::mutex bodies_mutex;
+    std::vector<nlohmann::json> submit_bodies;
+    std::atomic<int> submit_calls{0};
+
+    http.server.Post(
+        "/api/deploy/prepare",
+        [&](const httplib::Request&, httplib::Response& res) {
+            res.set_content(
+                nlohmann::json{
+                    {"plan_id", "plan-durable-retry"},
+                    {"ring_reference", ring_reference},
+                    {"transactions", nlohmann::json::array({
+                        {
+                            {"payload_data", "urn:pi:test:durable"}
+                        }
+                    })}
+                }.dump(),
+                "application/json"
+            );
+        }
+    );
+
+    http.server.Post(
+        "/api/deploy/submit",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            {
+                std::lock_guard lock(bodies_mutex);
+                submit_bodies.push_back(
+                    nlohmann::json::parse(req.body)
+                );
+            }
+
+            const auto call = ++submit_calls;
+            if (call == 1) {
+                res.status = 400;
+                res.set_content(
+                    R"({"error":"deploy_failed","message":"scripted"})",
+                    "application/json"
+                );
+                return;
+            }
+
+            res.status = 202;
+            res.set_content(
+                nlohmann::json{
+                    {"status", "queued"},
+                    {"pending_block_ids", nlohmann::json::array({"pending-durable"})}
+                }.dump(),
+                "application/json"
+            );
+        }
+    );
+
+    http.server.Get(
+        R"(/chain/([^/]+)/pending/([^/]+))",
+        [](const httplib::Request& req, httplib::Response& res) {
+            res.set_content(
+                nlohmann::json{
+                    {"id", req.matches[2].str()},
+                    {"chain_address", req.matches[1].str()},
+                    {"state", "Finalized"},
+                    {"error", nullptr}
+                }.dump(),
+                "application/json"
+            );
+        }
+    );
+
+    http.start();
+
+    const auto root =
+        std::filesystem::temp_directory_path() /
+        ("utx_deploy_submission_" +
+         utx::common::generate_uuid_v7().to_string());
+    std::filesystem::create_directories(root);
+
+    const auto wallet = WalletHelper::generate_keypair();
+
+    DeployRequest request;
+    request.chain_id = "chain-durable";
+    request.file_path = "index.html";
+    request.content = "hello";
+    request.kind = "identity";
+    request.commit_message = "test durable retry";
+
+    {
+        DeployClient first(http.base_url(), root);
+        const auto failed = first.deploy(request, wallet);
+        ASSERT_FALSE(failed.has_value());
+    }
+
+    {
+        DeployClient second(http.base_url(), root);
+        const auto retried = second.deploy(request, wallet);
+        ASSERT_TRUE(retried.has_value()) << retried.error();
+    }
+
+    std::vector<nlohmann::json> captured;
+    {
+        std::lock_guard lock(bodies_mutex);
+        captured = submit_bodies;
+    }
+
+    ASSERT_EQ(captured.size(), 2U);
+    EXPECT_EQ(
+        captured[0].at("signed_transactions"),
+        captured[1].at("signed_transactions")
+    );
+
+    const auto pending_dir =
+        root / ".utx" / "pending-deploy-submissions";
+    if (std::filesystem::exists(pending_dir)) {
+        EXPECT_TRUE(std::filesystem::is_empty(pending_dir));
+    }
+
+    std::error_code ignored;
+    std::filesystem::remove_all(root, ignored);
+}
+
+TEST(DeployClientTest, SubmitRetriesTransientFailureWithExactSameBody) {
+    LocalHttpServer http;
+
+    std::mutex bodies_mutex;
+    std::vector<std::string> bodies;
+    std::atomic<int> submit_calls{0};
+
+    http.server.Post(
+        "/api/deploy/submit",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            {
+                std::lock_guard lock(bodies_mutex);
+                bodies.push_back(req.body);
+            }
+
+            const auto call = ++submit_calls;
+            if (call == 1) {
+                res.status = 503;
+                res.set_content(
+                    R"({"error":"deploy_gate_unavailable"})",
+                    "application/json"
+                );
+                return;
+            }
+
+            res.status = 202;
+            res.set_content(
+                nlohmann::json{
+                    {"status", "queued"},
+                    {"pending_block_ids", nlohmann::json::array({"pending-retry"})}
+                }.dump(),
+                "application/json"
+            );
+        }
+    );
+
+    http.start();
+
+    DeployClient client(http.base_url());
+
+    const nlohmann::json signed_txs =
+        nlohmann::json::array({
+            {
+                {"sender", "sender"},
+                {"receiver", "chain"},
+                {"amount", 0},
+                {"nonce", 42},
+                {"data", "payload"},
+                {"sender_pubkey", "pubkey"},
+                {"signature", "signature"}
+            }
+        });
+
+    const auto result = client.submit(
+        "plan-retry",
+        "chain",
+        nlohmann::json{{"version", "ring-v1"}},
+        signed_txs
+    );
+
+    ASSERT_TRUE(result.has_value()) << result.error();
+    ASSERT_EQ(submit_calls.load(), 2);
+
+    std::vector<std::string> captured;
+    {
+        std::lock_guard lock(bodies_mutex);
+        captured = bodies;
+    }
+
+    ASSERT_EQ(captured.size(), 2U);
+    EXPECT_EQ(captured[0], captured[1]);
+}
+
+TEST(DeployClientTest, SubmitDoesNotRetryDeterministicClientFailure) {
+    LocalHttpServer http;
+    std::atomic<int> submit_calls{0};
+
+    http.server.Post(
+        "/api/deploy/submit",
+        [&](const httplib::Request&, httplib::Response& res) {
+            ++submit_calls;
+            res.status = 400;
+            res.set_content(
+                R"({"error":"deploy_failed","message":"submission_mismatch"})",
+                "application/json"
+            );
+        }
+    );
+
+    http.start();
+
+    DeployClient client(http.base_url());
+
+    const auto result = client.submit(
+        "plan-no-retry",
+        "chain",
+        nlohmann::json{{"version", "ring-v1"}},
+        nlohmann::json::array()
+    );
+
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(submit_calls.load(), 1);
+}
 
 TEST(DeployClientTest, PrepareSendsProjectorComposition) {
     LocalHttpServer http;
