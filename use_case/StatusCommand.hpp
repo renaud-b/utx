@@ -10,6 +10,7 @@
 
 #include "domain/Types.hpp"
 #include "infrastructure/ignore/IgnoreManager.hpp"
+#include "infrastructure/deploy_config/StagingManager.hpp"
 
 namespace utx::app::use_case {
     /**
@@ -34,9 +35,16 @@ namespace utx::app::use_case {
             }
             LOG_THIS_INFO("---------------------------------------------------------");
 
+            const auto staging = infrastructure::deploy::StagingManager::load(ctx_.root);
+            if (!staging) {
+                LOG_THIS_ERROR("❌ {}", staging.error());
+                return 1;
+            }
             std::vector<std::string> tracked_files;
 
             for (const auto &target: ctx_.deploy_config.targets) {
+                const bool is_staged =
+                    std::ranges::find(*staging, target.path) != staging->end();
                 tracked_files.push_back(target.path);
                 std::filesystem::path local_p = ctx_.root / target.path;
 
@@ -48,12 +56,26 @@ namespace utx::app::use_case {
                         domain::color::grey, target.chain,
                         domain::color::reset
                     );
+                    if (is_staged) LOG_THIS_WARN("    (staged but missing; deploy will refuse it)");
                     continue;
                 }
                 std::string raw_content = common::io::read_file(local_p.string());
                 std::string current_file_hash = common::md5_hex(raw_content);
 
-                if (current_file_hash != target.last_synced_hash) {
+                if (is_staged) {
+                    LOG_THIS_INFO(
+                        "  {}[STAGED]{}     {} {}{}{} ({})",
+                        domain::color::cyan,
+                        domain::color::reset,
+                        target.path,
+                        domain::color::grey,
+                        target.chain,
+                        domain::color::reset,
+                        current_file_hash == target.last_synced_hash
+                            ? "Unchanged; only manifest sync needed"
+                            : "Selected for next deploy"
+                    );
+                } else if (current_file_hash != target.last_synced_hash) {
                     LOG_THIS_INFO(
                         "  {}[MODIFIED]{}   {} {}{}{} (File changed, needs deploy)",
                         domain::color::yellow,

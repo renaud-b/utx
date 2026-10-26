@@ -6,6 +6,7 @@
 #include "common/Logger.hpp"
 #include "infrastructure/context/AppContext.hpp"
 #include "infrastructure/deploy_config/DeployConfig.hpp"
+#include "infrastructure/deploy_config/StagingManager.hpp"
 
 namespace utx::app::use_case {
 
@@ -28,8 +29,10 @@ public:
 
         size_t invalidated = 0;
         size_t legacy_label_targets_cleared = 0;
+        std::vector<std::string> staged_paths;
 
         for (auto& target : ctx_.deploy_config.targets) {
+            staged_paths.push_back(target.path);
             if (!target.last_synced_hash.empty()) {
                 target.last_synced_hash.clear();
                 ++invalidated;
@@ -57,6 +60,13 @@ public:
             return 1;
         }
 
+        if (const auto saved =
+                infrastructure::deploy::StagingManager::save(ctx_.root, staged_paths);
+            !saved) {
+            LOG_THIS_ERROR("❌ Failed to stage reset targets: {}", saved.error());
+            return 1;
+        }
+
         if (invalidated == 0 && legacy_label_targets_cleared == 0) {
             LOG_THIS_INFO("♻️ Local synchronization state was already reset.");
         } else {
@@ -73,7 +83,7 @@ public:
         }
 
         LOG_THIS_INFO(
-            "   Files, chain IDs, wallet and project configuration were preserved."
+            "   All tracked targets were staged; files, chain IDs, wallet and project configuration were preserved."
         );
         return 0;
     }

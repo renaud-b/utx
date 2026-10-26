@@ -7,6 +7,7 @@
 #include "common/Uuid.hpp"
 #include "infrastructure/context/AppContext.hpp"
 #include "infrastructure/deploy_config/DeployConfig.hpp"
+#include "infrastructure/deploy_config/StagingManager.hpp"
 #include "infrastructure/ignore/IgnoreManager.hpp"
 
 namespace utx::app::use_case {
@@ -76,6 +77,12 @@ namespace utx::app::use_case {
             }
             LOG_THIS_INFO("Adding file: {}", target_path.string());
 
+            const auto staged = infrastructure::deploy::StagingManager::load(ctx_.root);
+            if (!staged) {
+                LOG_THIS_ERROR("❌ {}", staged.error());
+                return 1;
+            }
+            auto staged_paths = *staged;
             const auto ignores = ctx_.ignore_manager.load_ignore_set(ctx_.root);
 
             // Directory handling rule: --chain is only valid for single file
@@ -143,7 +150,10 @@ namespace utx::app::use_case {
                                   domain::color::reset);
                 }
 
-                upsert_target(ctx_.deploy_config, target_file_rel_path, chain_id, kind, "");
+                upsert_target(ctx_.deploy_config, target_file_rel_path, chain_id, kind);
+                if (std::ranges::find(staged_paths, target_file_rel_path) == staged_paths.end()) {
+                    staged_paths.push_back(target_file_rel_path);
+                }
                 added++;
 
                 LOG_THIS_INFO("  {}+{} {} -> chain:{} (kind:{}){}",
@@ -204,11 +214,22 @@ namespace utx::app::use_case {
                 return 0;
             }
 
-            // Sauvegarde manifeste
-            std::ofstream f(ctx_.root / infrastructure::deploy::kDeployFile);
-            f << json(ctx_.deploy_config).dump(4);
+            // Keep the versioned tracked-target manifest separate from local selection.
+            if (const auto saved =
+                    infrastructure::deploy::DeployConfigManager::save_deploy_config_atomic(
+                        ctx_.root, ctx_.deploy_config
+                    ); !saved) {
+                LOG_THIS_ERROR("❌ {}", saved.error());
+                return 1;
+            }
+            if (const auto saved =
+                    infrastructure::deploy::StagingManager::save(ctx_.root, staged_paths);
+                !saved) {
+                LOG_THIS_ERROR("❌ {}", saved.error());
+                return 1;
+            }
 
-            LOG_THIS_INFO("\n{}✅ Add complete: {} file(s) updated. (ignored: {}, non-regular: {}){}",
+            LOG_THIS_INFO("\n{}✅ Add complete: {} file(s) staged. (ignored: {}, non-regular: {}){}",
                           domain::color::green, added, skipped_ignored, skipped_non_regular,
                           domain::color::reset);
 
@@ -234,8 +255,7 @@ namespace utx::app::use_case {
         static void upsert_target(domain::DeployConfig &deploy_config,
                                   const std::string &rel_path,
                                   const std::string &chain_id,
-                                  domain::TargetKind kind,
-                                  const std::string &file_hash) {
+                                  domain::TargetKind kind) {
             auto it = std::ranges::find_if(
                 deploy_config.targets,
                 [&](auto &t) {
@@ -244,15 +264,19 @@ namespace utx::app::use_case {
             );
 
             if (it != deploy_config.targets.end()) {
+                // Re-adding an existing target is staging, NOT invalidation.
+                // Changing its destination or parser does require a new deploy.
+                if (it->chain != chain_id || it->kind != kind) {
+                    it->last_synced_hash.clear();
+                }
                 it->chain = chain_id;
                 it->kind = kind;
-                it->last_synced_hash = file_hash;
             } else {
                 domain::DeployTarget t;
                 t.path = rel_path;
                 t.chain = chain_id;
                 t.kind = kind;
-                t.last_synced_hash = file_hash;
+                t.last_synced_hash.clear();
                 deploy_config.targets.push_back(std::move(t));
             }
         }

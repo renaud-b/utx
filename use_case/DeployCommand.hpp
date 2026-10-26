@@ -16,6 +16,7 @@
 #include "common/ThreadPool.hpp"
 #include "infrastructure/context/AppContext.hpp"
 #include "infrastructure/deploy_config/DeployConfig.hpp"
+#include "infrastructure/deploy_config/StagingManager.hpp"
 
 namespace utx::app::use_case {
 
@@ -55,7 +56,38 @@ public:
 
         const std::string commit_message = args[2];
 
-        for (const auto& target : ctx_.deploy_config.targets) {
+        const auto staging = infrastructure::deploy::StagingManager::load(ctx_.root);
+        if (!staging) {
+            LOG_THIS_ERROR("❌ {}", staging.error());
+            return 1;
+        }
+        if (staging->empty()) {
+            LOG_THIS_INFO("✨ Nothing staged. Use 'utx add <path>' first.");
+            return 0;
+        }
+
+        // Validate the entire selection before beginning any network operation.
+        // An obsolete or missing staged target must not be silently ignored.
+        std::vector<domain::DeployTarget> selected_targets;
+        selected_targets.reserve(staging->size());
+        for (const auto& path : *staging) {
+            const auto it = std::ranges::find_if(
+                ctx_.deploy_config.targets,
+                [&](const auto& target) { return target.path == path; }
+            );
+            if (it == ctx_.deploy_config.targets.end()) {
+                LOG_THIS_ERROR("❌ Staged path is not tracked: {}", path);
+                return 1;
+            }
+            const auto local_path = ctx_.root / it->path;
+            if (!std::filesystem::is_regular_file(local_path)) {
+                LOG_THIS_ERROR("❌ Staged file is missing or not regular: {}", path);
+                return 1;
+            }
+            selected_targets.push_back(*it);
+        }
+
+        for (const auto& target : selected_targets) {
             if (target.kind == domain::TargetKind::Go) {
                 LOG_THIS_ERROR(
                     "❌ Cannot deploy {}: Go deploys are not supported by the current V1 node deploy planner.",
@@ -80,9 +112,9 @@ public:
         };
 
         std::vector<Work> work;
-        work.reserve(ctx_.deploy_config.targets.size());
+        work.reserve(selected_targets.size());
 
-        for (const auto& target : ctx_.deploy_config.targets) {
+        for (const auto& target : selected_targets) {
             const auto local_path = ctx_.root / target.path;
             if (!std::filesystem::exists(local_path) ||
                 !std::filesystem::is_regular_file(local_path)) {
@@ -107,6 +139,7 @@ public:
         std::mutex config_mutex;
         std::atomic<size_t> succeeded{0};
         std::atomic<size_t> failed{0};
+        std::vector<std::string> failed_paths;
 
         if (!work.empty()) {
             LOG_THIS_INFO(
@@ -151,6 +184,10 @@ public:
                             item.target.chain,
                             result.error()
                         );
+                        {
+                            std::lock_guard lock(config_mutex);
+                            failed_paths.push_back(item.target.path);
+                        }
                         ++failed;
                         return;
                     }
@@ -205,6 +242,14 @@ public:
         }
 
         if (failed.load() != 0) {
+            // Already finalized targets are no longer staged; failed ones stay
+            // selected for an explicit retry. Do not publish a partial manifest.
+            if (const auto saved =
+                    infrastructure::deploy::StagingManager::save(ctx_.root, failed_paths);
+                !saved) {
+                LOG_THIS_ERROR("❌ {}", saved.error());
+                return 1;
+            }
             LOG_THIS_WARN(
                 "{}⚠️ {} chain(s) failed and remain modified locally. Re-run 'utx deploy' after fixing the reported error.{}",
                 domain::color::yellow,
@@ -216,11 +261,20 @@ public:
 
         if (const auto manifest_result = deploy_manifest(commit_message, force_snapshot);
             manifest_result != 0) {
+            // Keep the selection (now clean) so the next deploy can retry
+            // publishing the manifest, without redeploying finalized files.
             return manifest_result;
         }
 
+        if (const auto saved =
+                infrastructure::deploy::StagingManager::save(ctx_.root, {});
+            !saved) {
+            LOG_THIS_ERROR("❌ {}", saved.error());
+            return 1;
+        }
+
         if (work.empty()) {
-            LOG_THIS_INFO("✨ Nothing else to deploy.");
+            LOG_THIS_INFO("✨ Staged files are already synchronized.");
         }
 
         return 0;
