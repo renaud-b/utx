@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -276,4 +277,119 @@ TEST(DeployCommandTest, PublishesProjectManifestThroughJsonDeployPlanner) {
         utx::app::infrastructure::deploy::StagingManager::load(project.root);
     ASSERT_TRUE(staged.has_value());
     EXPECT_TRUE(staged->empty());
+}
+
+
+TEST(DeployCommandTest, PartialFailureRetainsOnlyFailedSelectionForRetry) {
+    LocalDeployServer http;
+    std::atomic<bool> reject_b{true};
+    std::atomic<int> a_prepares{0};
+    std::atomic<int> b_prepares{0};
+    std::atomic<int> c_prepares{0};
+
+    http.server.Post(
+        "/api/deploy/prepare",
+        [&](const httplib::Request& req, httplib::Response& res) {
+            const auto body = nlohmann::json::parse(req.body);
+            const auto chain = body.at("chain_id").get<std::string>();
+            if (chain == "chain-a") ++a_prepares;
+            if (chain == "chain-b") ++b_prepares;
+            if (chain == "chain-c") ++c_prepares;
+            if (chain == "chain-b" && reject_b.load()) {
+                res.status = 400;
+                res.set_content(R"({"error":"temporary rejection"})", "application/json");
+                return;
+            }
+            res.set_content(nlohmann::json{
+                {"plan_id", "plan-" + chain},
+                {"ring_reference", nlohmann::json{{"version", "ring-v1"}}},
+                {"transactions", nlohmann::json::array({
+                    {{"payload_data", "urn:pi:test:content"}}
+                })}
+            }.dump(), "application/json");
+        }
+    );
+
+    http.server.Post(
+        "/api/deploy/submit",
+        [](const httplib::Request&, httplib::Response& res) {
+            res.status = 202;
+            res.set_content(nlohmann::json{
+                {"status", "queued"},
+                {"pending_block_ids", nlohmann::json::array({"pending-1"})}
+            }.dump(), "application/json");
+        }
+    );
+
+    http.server.Get(
+        R"(/chain/([^/]+)/pending/([^/]+))",
+        [](const httplib::Request& req, httplib::Response& res) {
+            res.set_content(nlohmann::json{
+                {"id", req.matches[2].str()},
+                {"chain_address", req.matches[1].str()},
+                {"state", "Finalized"},
+                {"error", nullptr}
+            }.dump(), "application/json");
+        }
+    );
+    http.start();
+
+    TempProject project;
+    for (const auto& name : {"a.html", "b.html", "c.html"}) {
+        std::ofstream out(project.root / name);
+        out << "changed " << name;
+    }
+
+    AppContext ctx;
+    ctx.root = project.root;
+    ctx.project_config.api_target = http.base_url();
+    ctx.network_client.target = http.base_url();
+    ctx.wallet = WalletHelper::generate_keypair();
+    for (const auto& name : {"a", "b", "c"}) {
+        ctx.deploy_config.targets.push_back(DeployTarget{
+            .path = std::string(name) + ".html",
+            .chain = std::string("chain-") + name,
+            .kind = TargetKind::Html,
+            .last_synced_hash = "old-content"
+        });
+    }
+
+    ASSERT_TRUE(utx::app::infrastructure::deploy::DeployConfigManager::
+        save_deploy_config_atomic(ctx.root, ctx.deploy_config).has_value());
+    ASSERT_TRUE(utx::app::infrastructure::deploy::StagingManager::
+        save(ctx.root, {"a.html", "b.html"}).has_value());
+
+    EXPECT_EQ(DeployCommand(ctx).execute({"utx", "deploy", "first try"}), 1);
+
+    utx::app::infrastructure::deploy::DeployConfigManager manager;
+    const auto after_first = manager.load_deploy_config(project.root);
+    ASSERT_TRUE(after_first.has_value());
+    ASSERT_EQ(after_first->targets.size(), 3U);
+    EXPECT_NE(after_first->targets[0].last_synced_hash, "old-content");
+    EXPECT_EQ(after_first->targets[1].last_synced_hash, "old-content");
+    EXPECT_EQ(after_first->targets[2].last_synced_hash, "old-content");
+
+    const auto staged_after_first =
+        utx::app::infrastructure::deploy::StagingManager::load(project.root);
+    ASSERT_TRUE(staged_after_first.has_value());
+    EXPECT_EQ(*staged_after_first, (std::vector<std::string>{"b.html"}));
+    EXPECT_EQ(a_prepares.load(), 1);
+    EXPECT_EQ(b_prepares.load(), 1);
+    EXPECT_EQ(c_prepares.load(), 0);
+
+    reject_b = false;
+    ctx.deploy_config = *after_first;
+    EXPECT_EQ(DeployCommand(ctx).execute({"utx", "deploy", "retry"}), 0);
+
+    const auto after_retry = manager.load_deploy_config(project.root);
+    ASSERT_TRUE(after_retry.has_value());
+    EXPECT_NE(after_retry->targets[1].last_synced_hash, "old-content");
+    EXPECT_EQ(after_retry->targets[2].last_synced_hash, "old-content");
+    const auto staged_after_retry =
+        utx::app::infrastructure::deploy::StagingManager::load(project.root);
+    ASSERT_TRUE(staged_after_retry.has_value());
+    EXPECT_TRUE(staged_after_retry->empty());
+    EXPECT_EQ(a_prepares.load(), 1);
+    EXPECT_EQ(b_prepares.load(), 2);
+    EXPECT_EQ(c_prepares.load(), 0);
 }
