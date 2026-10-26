@@ -100,7 +100,8 @@ project/
 ├─ .utx.deploy.json         # Versioned deployment manifest (tracked targets)
 ├─ .utxignore               # Ignore rules (gitignore-like)
 ├─ .utx/
-│  └─ config.json           # Local project config (wallet, api target, deploy chain)
+│  ├─ config.json           # Local project config (wallet, api target, deploy chain)
+│  └─ staging.json          # Local-only selection for next deploy
 ├─ src/
 ├─ web/
 └─ ...
@@ -250,13 +251,15 @@ Clears the local wallet reference. (It does not delete your wallet file.)
 
 ### What `add` means in Utopixia
 
-`utx add` does not “stage content” like Git. Instead, it registers a file (or a directory of files) into the deployment manifest with:
+`utx add` registers a file (or directory) in the versioned deployment manifest AND stages its path in local-only `.utx/staging.json`. Unlike Git, staging does not copy content: deploy reads the file at deployment time. It registers:
 
 - a stable chain id,
 - a kind (parser/projector),
 - a parser/projector kind supported by the current node deploy planner.
 
-After that, `utx status` and `utx deploy` can include that target.
+After that, `utx status` shows `STAGED` and `utx deploy` deploys only selected paths.
+Calling `utx add` again on an existing path does not invalidate its synchronized
+hash unless its chain or kind changed.
 
 ### `utx add`
 
@@ -362,7 +365,8 @@ This is designed to be fast. It uses file hashes (MD5 in the current implementat
 
 It reports each tracked target in one of these states:
 
-- `CLEAN`: local file hash equals `last_synced_hash`
+- `STAGED`: selected for the next deploy, including if currently unchanged
+- `CLEAN`: local file hash equals `last_synced_hash` and not staged
 - `MODIFIED`: local file hash differs; needs deploy
 - `DELETED`: tracked path missing on disk
 - `UNTRACKED`: files in the repo not present in the manifest (excluding ignored)
@@ -381,7 +385,7 @@ utx deploy "message" [--force-snapshot]
 
 A deploy is a **one-shot network operation**. There is no local committed-but-not-pushed state.
 
-For every modified tracked target, `utx`:
+For every modified **staged** target, `utx`:
 
 1. reads the current file and compares its local hash with `last_synced_hash`;
 2. sends the raw content, target kind, chain id and message to the node deploy protocol;
@@ -397,7 +401,7 @@ The node — not the CLI — owns parsing, graph diffing and snapshot/action str
 
 After all modified targets succeed, `utx` publishes the updated `.utx.deploy.json` to the project's `deploy_chain` through the same protocol using `kind=json`. This keeps `utx download` reconstructible without embedding a JSON-to-graph compiler in the CLI.
 
-A multi-chain deploy is not globally atomic. If one target fails, successful targets remain synchronized and the failed target remains `MODIFIED` for the next deploy.
+A multi-chain deploy is not globally atomic. If one target fails, successful targets remain synchronized and are unstaged; failed targets remain `STAGED` for an explicit retry. Unstaged modified files are never deployed. On manifest synchronization failure, staging is retained until a retry succeeds.
 
 ---
 ## 12. API management (`utx api`)
@@ -557,11 +561,12 @@ After push, your `web/index.html` chain exists, and nodes can rebuild its DOM gr
 
 ### B. Iterate quickly
 
-Edit files freely, inspect local changes, then deploy the current state in one shot:
+Edit files freely, inspect local changes, then stage only those you want to publish:
 
 ```bash
 utx status
-utx deploy "update"
+utx add web/index.html
+utx deploy "update homepage"
 ```
 
 There is no local commit queue. If delayed/offline preparation is needed in the future, it will be exposed as a separate explicit operation rather than changing `deploy` semantics.
@@ -591,7 +596,7 @@ Parsing and graph diffing are node responsibilities. Typical causes include pars
 
 ### “Deploy is partial. What should I do?”
 
-Run `utx deploy` again after fixing the reported error. Targets that already reached `Finalized` have their `last_synced_hash` updated locally; failed targets remain `MODIFIED` and are replanned against current network state.
+Run `utx deploy` again after fixing the reported error. Targets that already reached `Finalized` have their `last_synced_hash` updated locally and are removed from staging; failed paths remain staged and are replanned against current network state.
 
 ---
 ## 18. Security and determinism notes

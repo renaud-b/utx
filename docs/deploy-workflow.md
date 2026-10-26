@@ -4,7 +4,7 @@
 
 A deploy is a one-shot operation.
 
-`utx` sends the current content of each modified tracked target to a node, signs the deployment plan returned by that node, submits it immediately, and marks the target synchronized only after the deployment reaches `Finalized`.
+`utx` sends the current content of each modified explicitly staged target to a node, signs the deployment plan returned by that node, submits it immediately, and marks the target synchronized only after the deployment reaches `Finalized`.
 
 There is no persistent local "committed but not pushed" deployment state.
 
@@ -25,7 +25,16 @@ utx status
 utx deploy "message" [--force-snapshot]
 ```
 
-Modified target chains are deployed independently and concurrently.
+Tracked targets are registered in the versioned `.utx.deploy.json` manifest.
+`utx add <path>` also selects those paths in local-only `.utx/staging.json`.
+Repeated `add` preserves the last synchronized hash when chain/kind are unchanged.
+Unstaged modified targets are not deployed.
+
+Selected modified chains are deployed independently and concurrently. A successfully
+finalized target is removed from staging; failed targets stay selected for retry.
+If manifest synchronization fails, selected but already finalized files remain
+selected to allow retrying the manifest without resending their content.
+An invalid or missing selected target fails the deployment before any submission.
 
 A target updates its local `last_synced_hash` only after its deployment reaches `Finalized`. Other chains may still succeed if one chain fails.
 
@@ -62,7 +71,7 @@ utx status
 utx deploy "redeploy after network reset"
 ```
 
-Existing tracked files appear modified again and are eligible for deployment.
+Existing tracked files appear modified again and are all staged for redeployment.
 
 The operation is idempotent: running `utx reset` repeatedly does not alter project topology.
 

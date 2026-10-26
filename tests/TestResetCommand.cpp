@@ -8,6 +8,7 @@
 #include "domain/Types.hpp"
 #include "infrastructure/context/AppContext.hpp"
 #include "infrastructure/deploy_config/DeployConfig.hpp"
+#include "infrastructure/deploy_config/StagingManager.hpp"
 #include "use_case/ResetCommand.hpp"
 
 namespace {
@@ -97,6 +98,9 @@ TEST(ResetCommandTest, ClearsSynchronizationHashesAndLegacyLabelsWhilePreserving
     EXPECT_TRUE(target.genesis_labels.empty());
 
     EXPECT_TRUE(saved->targets[1].last_synced_hash.empty());
+    const auto staged = utx::app::infrastructure::deploy::StagingManager::load(project.root);
+    ASSERT_TRUE(staged.has_value());
+    EXPECT_EQ(*staged, (std::vector<std::string>{"index.html", "app.js"}));
 
     std::ifstream project_file(project.root / "index.html");
     const std::string preserved_content{
