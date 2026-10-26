@@ -46,7 +46,7 @@ TEST(StagingTest, AddExistingTargetStagesWithoutClearingSyncedHash) {
     });
     p.save(ctx.deploy_config);
     const auto rc = utx::app::use_case::AddCommand(ctx).execute(
-        {"utx", "add", "index.html"});
+        {"utx", "add", (p.root / "index.html").string()});
     ASSERT_EQ(rc, 0);
     utx::app::infrastructure::deploy::DeployConfigManager manager;
     const auto config = manager.load_deploy_config(p.root);
