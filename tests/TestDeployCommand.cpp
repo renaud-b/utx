@@ -129,6 +129,10 @@ TEST(DeployCommandTest, DeploysModifiedTargetAndMarksItSyncedAfterFinalization) 
         std::ofstream out(project.root / "index.html");
         out << content;
     }
+    {
+        std::ofstream out(project.root / "app.js");
+        out << "console.log('unstaged change');";
+    }
 
     AppContext ctx;
     ctx.root = project.root;
@@ -140,6 +144,12 @@ TEST(DeployCommandTest, DeploysModifiedTargetAndMarksItSyncedAfterFinalization) 
         .chain = "chain-1",
         .kind = TargetKind::Html,
         .last_synced_hash = {}
+    });
+    ctx.deploy_config.targets.push_back(DeployTarget{
+        .path = "app.js",
+        .chain = "chain-unstaged",
+        .kind = TargetKind::Js,
+        .last_synced_hash = "previous-js-hash"
     });
 
     ASSERT_TRUE(
@@ -166,7 +176,8 @@ TEST(DeployCommandTest, DeploysModifiedTargetAndMarksItSyncedAfterFinalization) 
     utx::app::infrastructure::deploy::DeployConfigManager manager;
     const auto saved = manager.load_deploy_config(project.root);
     ASSERT_TRUE(saved.has_value()) << saved.error();
-    ASSERT_EQ(saved->targets.size(), 1U);
+    ASSERT_EQ(saved->targets.size(), 2U);
+    EXPECT_EQ(saved->targets[1].last_synced_hash, "previous-js-hash");
     EXPECT_EQ(
         saved->targets.front().last_synced_hash,
         utx::common::md5_hex(content)
