@@ -227,10 +227,29 @@ TEST(DeployCommandTest, PublishesProjectManifestThroughJsonDeployPlanner) {
     ctx.wallet = WalletHelper::generate_keypair();
     ctx.network_client.target = http.base_url();
 
+    // A clean but explicitly staged target asks deploy to synchronize the
+    // project manifest without unnecessarily redeploying that target.
+    const std::string clean_content = "already finalized";
+    {
+        std::ofstream out(project.root / "clean.js");
+        out << clean_content;
+    }
+    ctx.deploy_config.targets.push_back(DeployTarget{
+        .path = "clean.js",
+        .chain = "clean-chain",
+        .kind = TargetKind::Js,
+        .last_synced_hash = utx::common::md5_hex(clean_content)
+    });
+
     ASSERT_TRUE(
         utx::app::infrastructure::deploy::DeployConfigManager::save_deploy_config_atomic(
             ctx.root,
             ctx.deploy_config
+        ).has_value()
+    );
+    ASSERT_TRUE(
+        utx::app::infrastructure::deploy::StagingManager::save(
+            project.root, {"clean.js"}
         ).has_value()
     );
 
@@ -252,4 +271,9 @@ TEST(DeployCommandTest, PublishesProjectManifestThroughJsonDeployPlanner) {
     EXPECT_EQ(captured_prepare.at("commit_message"), "sync manifest [manifest]");
     EXPECT_FALSE(captured_prepare.at("force_snapshot").get<bool>());
     EXPECT_EQ(submit_calls.load(), 0);
+
+    const auto staged =
+        utx::app::infrastructure::deploy::StagingManager::load(project.root);
+    ASSERT_TRUE(staged.has_value());
+    EXPECT_TRUE(staged->empty());
 }
