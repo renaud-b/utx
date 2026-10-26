@@ -11,6 +11,8 @@
 #include "common/Hash.hpp"
 #include "infrastructure/context/AppContext.hpp"
 #include "infrastructure/deploy_config/DeployConfig.hpp"
+#include "infrastructure/deploy_config/StagingManager.hpp"
+#include "use_case/AddCommand.hpp"
 #include "infrastructure/wallet/WalletHelper.hpp"
 #include "use_case/DeployCommand.hpp"
 
@@ -147,6 +149,9 @@ TEST(DeployCommandTest, DeploysModifiedTargetAndMarksItSyncedAfterFinalization) 
         ).has_value()
     );
 
+    ASSERT_TRUE(utx::app::infrastructure::deploy::StagingManager::save(
+        project.root, {"index.html"}
+    ).has_value());
     const int rc = DeployCommand(std::move(ctx)).execute(
         {"utx", "deploy", "ship it", "--force-snapshot"}
     );
@@ -166,6 +171,9 @@ TEST(DeployCommandTest, DeploysModifiedTargetAndMarksItSyncedAfterFinalization) 
         saved->targets.front().last_synced_hash,
         utx::common::md5_hex(content)
     );
+    const auto staging = utx::app::infrastructure::deploy::StagingManager::load(project.root);
+    ASSERT_TRUE(staging.has_value());
+    EXPECT_TRUE(staging->empty());
 }
 
 } // namespace
