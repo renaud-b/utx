@@ -301,6 +301,11 @@ TEST(ArtifactDeployTest, AddStagesArtifactKindWithoutChangingJsSourceDefault) {
 
     EXPECT_EQ(utx::app::use_case::AddCommand(context).execute(
         {"utx", "add", (project.root / "dist/app.js").string(), "--kind", "artifact"}), 0);
+    // Every CLI invocation rebuilds AppContext from the persisted manifest.
+    utx::app::infrastructure::deploy::DeployConfigManager loader;
+    const auto after_first = loader.load_deploy_config(project.root);
+    ASSERT_TRUE(after_first);
+    context.deploy_config = *after_first;
     EXPECT_EQ(utx::app::use_case::AddCommand(context).execute(
         {"utx", "add", (project.root / "dist/logo.png").string()}), 0);
 
