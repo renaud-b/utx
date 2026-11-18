@@ -16,6 +16,7 @@ namespace utx::app::domain {
         std::string file_path = "index.html";
         std::string content;
         std::string kind = "";
+        std::string mime = "application/octet-stream";
         std::string commit_message = "deploy content";
         bool force_snapshot = true;
         std::string projector = "";
@@ -28,7 +29,7 @@ namespace utx::app::domain {
     };
 
     /** Enumeration of target kinds for deployment. */
-    enum class TargetKind { Html, Js, Css, Markdown, Go, Graph, Identity, Cpp, Json };
+    enum class TargetKind { Html, Js, Css, Markdown, Go, Graph, Identity, Cpp, Json, Artifact };
     /** Convert a TargetKind enum value to its string representation.
      * @param k TargetKind enum value.
      * @return String representation of the TargetKind.

@@ -27,7 +27,7 @@ namespace utx::app::use_case {
                 LOG_THIS_INFO(
                     "Usage: utx add <path> [--chain <id>] [--kind <kind>] [--force]");
                 LOG_THIS_INFO("  --chain <id>       : Specify the target chain ID (optional).");
-                LOG_THIS_INFO("  --kind <kind>      : Specify the target kind (Graph, Html, Js, Cpp, Css, Markdown).");
+                LOG_THIS_INFO("  --kind <kind>      : Specify the target kind (Graph, Html, Js, Cpp, Css, Markdown, Artifact).");
                 LOG_THIS_INFO("  --force            : Force adding even if ignored by .utxignore.");
                 LOG_THIS_INFO("  Note: genesis labels and Go deploys are not supported by the current V1 node deploy protocol.");
                 return 1;
@@ -57,8 +57,12 @@ namespace utx::app::use_case {
                     continue;
                 }
                 if (args[i] == "--kind" && i + 1 < args.size()) {
-                    if (auto k = domain::parse_kind(args[++i])) {
+                    const auto kind = args[++i];
+                    if (auto k = domain::parse_kind(kind)) {
                         kind_opt = *k;
+                    } else {
+                        LOG_THIS_ERROR("Unknown target kind: {}", kind);
+                        return 1;
                     }
                 }
             }
@@ -249,6 +253,15 @@ namespace utx::app::use_case {
             if (ext == ".css") return domain::TargetKind::Css;
             if (ext == ".md" || ext == ".markdown") return domain::TargetKind::Markdown;
             if (ext == ".go") return domain::TargetKind::Go;
+            // Source extensions keep their structural parsers. Opaque assets
+            // can be detected without interpreting the bytes as graph JSON.
+            if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" ||
+                ext == ".gif" || ext == ".webp" || ext == ".avif" ||
+                ext == ".ico" || ext == ".woff" || ext == ".woff2" ||
+                ext == ".ttf" || ext == ".otf" || ext == ".eot" ||
+                ext == ".wasm" || ext == ".pdf") {
+                return domain::TargetKind::Artifact;
+            }
             return domain::TargetKind::Graph;
         }
 
