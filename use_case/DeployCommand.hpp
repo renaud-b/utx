@@ -14,6 +14,7 @@
 #include "common/IO.hpp"
 #include "common/Logger.hpp"
 #include "common/ThreadPool.hpp"
+#include "infrastructure/deploy_config/ArtifactMime.hpp"
 #include "infrastructure/context/AppContext.hpp"
 #include "infrastructure/deploy_config/DeployConfig.hpp"
 #include "infrastructure/deploy_config/StagingManager.hpp"
@@ -167,6 +168,9 @@ public:
                     request.file_path = item.target.path;
                     request.kind = to_string(item.target.kind);
                     request.content = item.content;
+                    if (item.target.kind == domain::TargetKind::Artifact) {
+                        request.mime = infrastructure::deploy::artifact_mime_for_path(item.target.path);
+                    }
                     request.commit_message = commit_message;
                     request.force_snapshot = force_snapshot;
 

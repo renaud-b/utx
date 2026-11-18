@@ -10,6 +10,7 @@
 #include <httplib.h>
 
 #include "DeployClient.hpp"
+#include "ArtifactTransport.hpp"
 #include "common/Hash.hpp"
 #include "common/Logger.hpp"
 #include "common/ScopedTimer.hpp"
@@ -239,19 +240,21 @@ namespace utx::app::infrastructure::deploy {
                 }
 
                 for (std::size_t i = 0; i < transactions.size(); ++i) {
-                    const auto payload =
-                        transactions.at(i)
-                            .at("payload_data")
-                            .get<std::string>();
+                    const auto payload = decode_planned_payload(transactions.at(i));
+                    if (!payload) return std::unexpected(payload.error());
 
                     const auto signed_tx =
-                        signed_txs.at(i)
-                            .get<utx::domain::model::SignedTransaction>();
+                        signed_transaction_from_json(signed_txs.at(i));
+                    if (!signed_tx) return std::unexpected(signed_tx.error());
+                    if (signed_txs.at(i).contains("data_b64") != payload->artifact_binary) {
+                        return std::unexpected(
+                            "Pending deploy submission cache transport mismatch");
+                    }
 
-                    if (signed_tx.sender.to_string() != wallet.address ||
-                        signed_tx.receiver.to_string() != chain_id ||
-                        signed_tx.sender_public_key != wallet.public_key_hex ||
-                        signed_tx.data != payload) {
+                    if (signed_tx->sender.to_string() != wallet.address ||
+                        signed_tx->receiver.to_string() != chain_id ||
+                        signed_tx->sender_public_key != wallet.public_key_hex ||
+                        signed_tx->data != payload->bytes) {
                         return std::unexpected(
                             "Pending deploy submission cache transaction mismatch"
                         );
@@ -270,18 +273,18 @@ namespace utx::app::infrastructure::deploy {
 
         nlohmann::json signed_txs = nlohmann::json::array();
         for (const auto& tx : transactions) {
-            const auto payload =
-                tx.at("payload_data").get<std::string>();
+            const auto payload = decode_planned_payload(tx);
+            if (!payload) return std::unexpected(payload.error());
 
             auto signed_tx_res =
-                build_signed_tx(payload, chain_id, wallet);
+                build_signed_tx(payload->bytes, chain_id, wallet);
 
             if (!signed_tx_res) {
                 return std::unexpected(signed_tx_res.error());
             }
 
             signed_txs.push_back(
-                std::move(signed_tx_res.value())
+                signed_transaction_for_json(*signed_tx_res, payload->artifact_binary)
             );
         }
 
@@ -309,10 +312,16 @@ namespace utx::app::infrastructure::deploy {
             {"chain_id", req.chain_id},
             {"file_path", req.file_path},
             {"sender_address", sender},
-            {"content", req.content},
             {"commit_message", req.commit_message},
             {"force_snapshot", req.force_snapshot}
         };
+        if (req.kind == "artifact") {
+            // Binary bytes are Base64 on HTTP only, never in the signing preimage.
+            body["content_b64"] = common::base64::encode(req.content);
+            body["mime"] = req.mime;
+        } else {
+            body["content"] = req.content;
+        }
 
         if (!req.projectors.empty()) {
             body["projectors"] = req.projectors;

@@ -18,6 +18,7 @@ std::string to_string(TargetKind k) {
         case TargetKind::Cpp: return "cpp";
         case TargetKind::Identity: return "identity";
         case TargetKind::Json: return "json";
+        case TargetKind::Artifact: return "artifact";
         default: return "unknown";
     }
 }
@@ -33,6 +34,7 @@ std::optional<TargetKind> parse_kind(std::string s) {
     if (s == "graph") return TargetKind::Graph;
     if (s == "identity") return TargetKind::Identity;
     if (s == "json") return TargetKind::Json;
+    if (s == "artifact") return TargetKind::Artifact;
     return std::nullopt;
 }
 

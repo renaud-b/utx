@@ -56,6 +56,8 @@ add_executable(utx
         infrastructure/languages/javascript/JsGenerator.cpp
         infrastructure/crypto/OpenSSLCryptoService.cpp
         infrastructure/deploy_config/DeployClient.cpp
+        infrastructure/deploy_config/ArtifactTransport.hpp
+        infrastructure/deploy_config/ArtifactMime.hpp
 )
 
 target_include_directories(utx PRIVATE .)
