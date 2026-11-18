@@ -85,6 +85,7 @@ if (BUILD_TESTING)
     FetchContent_MakeAvailable(googletest)
 
     add_executable(utx_tests
+            tests/TestArtifactDeploy.cpp
             tests/TestDeployClient.cpp
             tests/TestDeployCommand.cpp
             tests/TestStaging.cpp
