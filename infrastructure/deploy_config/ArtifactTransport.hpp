@@ -66,7 +66,7 @@ decode_planned_payload(const nlohmann::json& plan_tx) {
 }
 
 [[nodiscard]] inline nlohmann::json signed_transaction_for_json(
-    const domain::model::SignedTransaction& tx, bool artifact_binary) {
+    const utx::domain::model::SignedTransaction& tx, bool artifact_binary) {
     nlohmann::json j = tx;
     if (artifact_binary) {
         j.erase("data");
@@ -75,7 +75,7 @@ decode_planned_payload(const nlohmann::json& plan_tx) {
     return j;
 }
 
-[[nodiscard]] inline std::expected<domain::model::SignedTransaction, std::string>
+[[nodiscard]] inline std::expected<utx::domain::model::SignedTransaction, std::string>
 signed_transaction_from_json(const nlohmann::json& wire) {
     try {
         if (!wire.is_object()) {
@@ -96,7 +96,7 @@ signed_transaction_from_json(const nlohmann::json& wire) {
                    j.at("data").get<std::string>().starts_with(kArtifactChunkPrefix)) {
             return std::unexpected("Artifact payload must use data_b64");
         }
-        return j.get<domain::model::SignedTransaction>();
+        return j.get<utx::domain::model::SignedTransaction>();
     } catch (const std::exception& e) {
         return std::unexpected(std::string("Invalid signed transaction: ") + e.what());
     }
