@@ -11,6 +11,7 @@
 
 #include "DeployClient.hpp"
 #include "ArtifactTransport.hpp"
+#include "ArtifactPlanVerifier.hpp"
 #include "common/Hash.hpp"
 #include "common/Logger.hpp"
 #include "common/ScopedTimer.hpp"
@@ -646,6 +647,20 @@ namespace utx::app::infrastructure::deploy {
         const auto plan_id =
             plan.at("plan_id").get<std::string>();
         const auto& transactions = plan.at("transactions");
+
+        if (req.kind == "artifact") {
+            const auto verified = verify_artifact_plan(
+                plan, req.content, req.mime);
+            if (!verified) return std::unexpected(verified.error());
+        } else {
+            // Binary plan entries are never valid for source deployments.
+            for (const auto& tx : transactions) {
+                if (tx.contains("payload_data_b64")) {
+                    return std::unexpected(
+                        "Binary payload in non-artifact deploy plan");
+                }
+            }
+        }
 
         // A prepare that finds no structural change is already complete:
         // there is nothing to admit or finalize. Any cached submit for this
