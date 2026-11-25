@@ -175,8 +175,9 @@ TEST(ChainInspection, ConsentIsExplicitAndFailClosed) {
     std::ostringstream silent;
     EXPECT_TRUE(download_approved(true, false, unavailable, silent));
     EXPECT_TRUE(download_approved(false, true, unavailable, silent));
+    EXPECT_TRUE(silent.str().empty());
     EXPECT_FALSE(download_approved(false, false, unavailable, silent));
-    EXPECT_EQ(silent.str().find("[y/N]"), silent.str().npos);
+    EXPECT_NE(silent.str().find("[y/N]"), std::string::npos);
     for (const std::string answer : {"y\n", "YES\n", " yes \n"}) {
         std::istringstream in(answer);
         std::ostringstream out;
