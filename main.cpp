@@ -17,6 +17,7 @@
 #include "use_case/InitCommand.hpp"
 #include "use_case/LoginCommand.hpp"
 #include "use_case/DownloadCommand.hpp"
+#include "use_case/InspectCommand.hpp"
 #include "use_case/DeployCommand.hpp"
 #include "use_case/StatusCommand.hpp"
 #include "use_case/ResetCommand.hpp"
@@ -59,7 +60,8 @@ int main(int argc, char **argv) {
         return utx::app::use_case::InitCommand().execute(args);
     }
 
-    if (cmd == "download") {
+    // Read-only commands work outside a project and without a configured wallet.
+    if (cmd == "download" || cmd == "inspect") {
         utx::app::infrastructure::context::AppContext ctx;
         ctx.root = std::filesystem::current_path();
 
@@ -71,6 +73,7 @@ int main(int argc, char **argv) {
         ctx.ignore_manager = utx::app::infrastructure::ignore::IgnoreManager{};
         ctx.project_label = utx::app::infrastructure::deploy::DeployConfigManager::project_label_from_root(ctx.root);
 
+        if (cmd == "inspect") return utx::app::use_case::InspectCommand(std::move(ctx)).execute(args);
         return utx::app::use_case::DownloadCommand(std::move(ctx)).execute(args);
     }
 
