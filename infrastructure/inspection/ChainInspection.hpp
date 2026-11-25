@@ -32,6 +32,7 @@ struct ChainInfo {
     std::string chain_id;
     std::string endpoint;
     std::optional<std::uint64_t> height;
+    std::string head_hash;
     std::vector<std::string> projectors;
     std::vector<std::string> labels;
     std::vector<OwnerProfile> owners;
@@ -67,19 +68,14 @@ inline std::string json_text(const nlohmann::json& object, const char* key) {
 inline std::expected<ChainInfo, std::string> parse_chain_config(
     const nlohmann::json& config, std::string chain_id, std::string endpoint) {
     if (!config.is_object() ||
-        !config.contains("owners") || !config.at("owners").is_array() ||
         !config.contains("projectors") || !config.at("projectors").is_array()) {
-        return std::unexpected("Missing owners or projectors in chain configuration");
+        return std::unexpected("Missing projectors in chain configuration");
     }
     ChainInfo info{.chain_id = std::move(chain_id), .endpoint = std::move(endpoint)};
     try {
-        for (const auto& owner : config.at("owners")) {
-            if (!owner.is_string() || !valid_owner_address(owner.get<std::string>()))
-                return std::unexpected("Invalid chain owner address");
-            info.owners.push_back(OwnerProfile{.address = owner.get<std::string>()});
-        }
-        if (info.owners.empty()) return std::unexpected("Chain configuration has no owner");
         info.projectors = config.at("projectors").get<std::vector<std::string>>();
+        if (std::ranges::count(info.projectors, std::string("OwnerProjector")) != 1)
+            return std::unexpected("Chain configuration requires exactly one OwnerProjector");
         if (config.contains("labels"))
             info.labels = config.at("labels").get<std::vector<std::string>>();
     } catch (const std::exception&) {
@@ -88,8 +84,36 @@ inline std::expected<ChainInfo, std::string> parse_chain_config(
     return info;
 }
 
+// The node's public /owners view resolves current canonical OwnerProjector state,
+// including transfers. ChainConfig has no owners field. Never fall back to
+// genesis/config/profile metadata if this view is unavailable.
+inline std::expected<void, std::string> populate_canonical_owners(
+    ChainInfo& info, const nlohmann::json& view) {
+    if (!view.is_object() || json_text(view, "chain_id") != info.chain_id ||
+        !view.contains("owners") || !view.at("owners").is_array() ||
+        !view.contains("height") || !view.at("height").is_number_unsigned()) {
+        return std::unexpected("Invalid canonical owner view");
+    }
+    const auto last_index = view.at("height").get<std::uint64_t>();
+    if (last_index == std::numeric_limits<std::uint64_t>::max())
+        return std::unexpected("Invalid chain height");
+
+    std::vector<OwnerProfile> owners;
+    for (const auto& address : view.at("owners")) {
+        if (!address.is_string() || !valid_owner_address(address.get<std::string>()))
+            return std::unexpected("Invalid canonical owner address");
+        owners.push_back(OwnerProfile{.address = address.get<std::string>()});
+    }
+    if (owners.empty()) return std::unexpected("Canonical owner set is empty");
+    info.owners = std::move(owners);
+    // The V1 /owners payload calls the last block index 'height'.
+    info.height = last_index + 1;
+    info.head_hash = json_text(view, "head_hash");
+    return {};
+}
+
 // Identity metadata is optional presentation data. Never use profile properties
-// as evidence of chain ownership; only config.owners determines the addresses.
+// as evidence of chain ownership; only canonical OwnerProjector state does.
 inline void populate_profile(OwnerProfile& owner, const nlohmann::json& state) {
     if (!state.is_object() || json_text(state, "_utx_state_model") != "projector-slices-v1" ||
         !state.contains("projector_states") || !state.at("projector_states").is_array()) return;
@@ -140,14 +164,10 @@ inline std::expected<ChainInfo, std::string> fetch_chain_info(
     auto parsed = parse_chain_config(*config, chain_id, endpoint);
     if (!parsed) return parsed;
 
-    // Height is a block count, not the last block index.
-    if (const auto last = fetch_json(client, "/chain/" + chain_id + "/last"); last &&
-        last->is_object() && last->contains("index") &&
-        last->at("index").is_number_unsigned()) {
-        const auto index = last->at("index").get<std::uint64_t>();
-        if (index < std::numeric_limits<std::uint64_t>::max())
-            parsed->height = index + 1;
-    }
+    const auto owners = fetch_json(client, "/chain/" + chain_id + "/owners");
+    if (!owners) return std::unexpected("Cannot read current chain owners: " + owners.error());
+    if (const auto loaded = populate_canonical_owners(*parsed, *owners); !loaded)
+        return std::unexpected(loaded.error());
 
     for (auto& owner : parsed->owners) {
         const auto state = fetch_json(client, "/chain/" + owner.address + "/state");
@@ -162,6 +182,8 @@ inline void print_chain_info(const ChainInfo& info, std::ostream& out = std::cou
     out << "  API        : " << safe_display_text(info.endpoint) << '\n';
     out << "  Height     : "
         << (info.height ? std::to_string(*info.height) : "unavailable") << '\n';
+    if (!info.head_hash.empty())
+        out << "  Head hash  : " << safe_display_text(info.head_hash, 128) << '\n';
     out << "  Projectors :";
     if (info.projectors.empty()) out << " (none)";
     for (const auto& projector : info.projectors) out << " " << safe_display_text(projector, 128);
@@ -188,13 +210,18 @@ inline void print_chain_info(const ChainInfo& info, std::ostream& out = std::cou
         }
         out << '\n';
     }
-    out << "  Note: chain metadata and profiles are reported by the selected node.\n\n";
+    out << "  Note: owners reflect the node-reported canonical OwnerProjector state;\n"
+           "        this CLI does not independently verify chain proofs.\n\n";
 }
 
 inline bool confirm_download(std::istream& in, std::ostream& out) {
     out << "  Download these files into the current directory? [y/N] " << std::flush;
     std::string answer;
-    if (!std::getline(in, answer)) return false;
+    if (!std::getline(in, answer)) {
+        out << '\n';
+        return false;
+    }
+    out << '\n';
     const auto start = answer.find_first_not_of(" \t");
     if (start == std::string::npos) return false;
     const auto end = answer.find_last_not_of(" \t");
