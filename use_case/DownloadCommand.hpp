@@ -26,6 +26,7 @@
 #include "infrastructure/deploy_config/DeployConfig.hpp"
 #include "infrastructure/download/SafeDownload.hpp"
 #include "infrastructure/download/ArtifactDownload.hpp"
+#include "infrastructure/inspection/ChainInspection.hpp"
 #include "infrastructure/languages/cpp/CppGenerator.hpp"
 #include "infrastructure/languages/css/CssGenerator.hpp"
 #include "infrastructure/languages/html/HtmlGenerator.hpp"
@@ -49,17 +50,21 @@ namespace utx::app::use_case {
         int execute(const std::vector<std::string>& args) override {
             if (args.size() < 3 || args[2] == "--help" || args[2] == "-h") {
                 LOG_THIS_INFO(
-                    "Usage: utx download <manifest_chain_id> [--api-target <host:port>] [--chain <id>] [--dry-run]");
+                    "Usage: utx download <manifest_chain_id> [--api-target <host:port>] [--chain <id>] [--dry-run] [--yes] [--no-avatar]");
                 LOG_THIS_INFO("  <manifest_chain_id>        : Chain that stores .utx.deploy.json.");
                 LOG_THIS_INFO("  --api-target <host:port>   : Override the network API target.");
                 LOG_THIS_INFO("  --chain <id>               : Alias for the manifest chain id.");
                 LOG_THIS_INFO("  --dry-run                  : Fetch and decode remote state without writing files.");
+                LOG_THIS_INFO("  --yes                      : Accept downloading without an interactive prompt.");
+                LOG_THIS_INFO("  --no-avatar                : Do not preview the publisher's picture.");
                 return 1;
             }
 
             std::string manifest_chain_id;
             std::string api_target_override;
             bool dry_run = false;
+            bool assume_yes = false;
+            bool show_avatar = true;
 
             for (size_t i = 2; i < args.size(); ++i) {
                 const auto& arg = args[i];
@@ -73,6 +78,14 @@ namespace utx::app::use_case {
                 }
                 if (arg == "--dry-run") {
                     dry_run = true;
+                    continue;
+                }
+                if (arg == "--yes") {
+                    assume_yes = true;
+                    continue;
+                }
+                if (arg == "--no-avatar") {
+                    show_avatar = false;
                     continue;
                 }
                 if (arg.rfind("--", 0) == 0) {
@@ -139,6 +152,24 @@ namespace utx::app::use_case {
             if (auto validation = infrastructure::download::validate_destinations(
                     ctx_.root, deploy_config, validation_mode); !validation) {
                 LOG_THIS_ERROR("Download refused: {}", validation.error());
+                return 1;
+            }
+
+            // Preview the node-reported chain owners before fetching file contents.
+            // Their decentralized profiles are descriptive only; the owner addresses
+            // come from the chain configuration, never from the manifest or profiles.
+            const auto info = infrastructure::inspection::fetch_chain_info(
+                ctx_.network_client.target, manifest_chain_id);
+            if (!info) {
+                LOG_THIS_ERROR("Download refused: {}", info.error());
+                return 1;
+            }
+
+            infrastructure::inspection::print_chain_info(*info, std::cout, show_avatar);
+            LOG_THIS_INFO("  Repository files: {}", deploy_config.targets.size());
+            if (!dry_run && !assume_yes &&
+                !infrastructure::inspection::confirm_download(std::cin, std::cout)) {
+                LOG_THIS_INFO("Download cancelled: no files were written.");
                 return 1;
             }
 
