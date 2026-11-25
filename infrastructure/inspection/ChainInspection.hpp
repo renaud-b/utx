@@ -208,7 +208,7 @@ inline void print_chain_info(const ChainInfo& info, std::ostream& out = std::cou
         if (!owner.picture.empty()) {
             out << "    Picture     : " << safe_display_text(owner.picture, 256) << '\n';
             out.flush();
-            if (show_avatar && &out == &std::cout) preview_avatar(owner.picture);
+            if (show_avatar && &out == &std::cout) preview_avatar(info.endpoint, owner.picture);
         }
         out << '\n';
     }
