@@ -167,8 +167,8 @@ namespace utx::app::use_case {
 
             infrastructure::inspection::print_chain_info(*info, std::cout, show_avatar);
             LOG_THIS_INFO("  Repository files: {}", deploy_config.targets.size());
-            if (!dry_run && !assume_yes &&
-                !infrastructure::inspection::confirm_download(std::cin, std::cout)) {
+            if (!infrastructure::inspection::download_approved(
+                    dry_run, assume_yes, std::cin, std::cout)) {
                 LOG_THIS_INFO("Download cancelled: no files were written.");
                 return 1;
             }
