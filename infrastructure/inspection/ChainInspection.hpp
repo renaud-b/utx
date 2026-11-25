@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <expected>
@@ -90,7 +91,7 @@ inline std::expected<ChainInfo, std::string> parse_chain_config(
 // Identity metadata is optional presentation data. Never use profile properties
 // as evidence of chain ownership; only config.owners determines the addresses.
 inline void populate_profile(OwnerProfile& owner, const nlohmann::json& state) {
-    if (!state.is_object() || state.value("_utx_state_model", "") != "projector-slices-v1" ||
+    if (!state.is_object() || json_text(state, "_utx_state_model") != "projector-slices-v1" ||
         !state.contains("projector_states") || !state.at("projector_states").is_array()) return;
 
     const nlohmann::json* root = nullptr;
