@@ -232,4 +232,9 @@ inline bool confirm_download(std::istream& in, std::ostream& out) {
     return answer == "y" || answer == "yes";
 }
 
+inline bool download_approved(bool dry_run, bool assume_yes,
+                              std::istream& in, std::ostream& out) {
+    return dry_run || assume_yes || confirm_download(in, out);
+}
+
 } // namespace utx::app::infrastructure::inspection
