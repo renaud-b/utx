@@ -64,7 +64,7 @@ add_executable(utx
 )
 
 target_include_directories(utx PRIVATE .)
-target_link_libraries(utx
+target_link_libraries(utx PRIVATE
         OpenSSL::SSL
         OpenSSL::Crypto
         nlohmann_json::nlohmann_json
