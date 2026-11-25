@@ -44,8 +44,14 @@ inline bool safe_target_path(std::string_view path) {
     }
 }
 
+enum class DestinationValidationMode {
+    RequireNewFiles,
+    ManifestOnly
+};
+
 inline std::expected<void, std::string> validate_destinations(
-    const fs::path& root, const domain::DeployConfig& config) {
+    const fs::path& root, const domain::DeployConfig& config,
+    DestinationValidationMode mode = DestinationValidationMode::RequireNewFiles) {
     std::set<fs::path> files{".utx.deploy.json", ".utx/config.json"};
     for (const auto& target : config.targets) {
         if (!safe_chain_id(target.chain) || !safe_target_path(target.path))
@@ -57,6 +63,8 @@ inline std::expected<void, std::string> validate_destinations(
         for (auto parent = file.parent_path(); !parent.empty(); parent = parent.parent_path())
             if (files.contains(parent))
                 return std::unexpected("Manifest contains a file/directory collision");
+        // A dry run checks the remote manifest, not the local filesystem.
+        if (mode == DestinationValidationMode::ManifestOnly) continue;
         fs::path current = root;
         for (auto it = file.begin(); it != file.end(); ++it) {
             current /= *it;
@@ -64,10 +72,13 @@ inline std::expected<void, std::string> validate_destinations(
             const auto status = fs::symlink_status(current, ec);
             if (status.type() == fs::file_type::not_found &&
                 (!ec || ec == std::errc::no_such_file_or_directory)) break;
+            const auto relative = current.lexically_relative(root).generic_string();
             if (ec || fs::is_symlink(status))
-                return std::unexpected("Destination contains an inaccessible path or symbolic link");
-            if (std::next(it) == file.end() || !fs::is_directory(status))
-                return std::unexpected("Destination already exists or is not a directory; use a fresh directory");
+                return std::unexpected("Destination is inaccessible or a symbolic link: '" + relative + "'");
+            if (std::next(it) == file.end())
+                return std::unexpected("Destination already exists: '" + relative + "'; use a fresh directory");
+            if (!fs::is_directory(status))
+                return std::unexpected("Destination parent is not a directory: '" + relative + "'");
         }
     }
     return {};
