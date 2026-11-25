@@ -520,7 +520,9 @@ What it does:
 
 With `--dry-run`, `utx download` still fetches and decodes the manifest plus each target chain, but it does not write any local files or config. It prints the owner preview without prompting, and does not require an empty directory. Without `--yes`, a non-interactive download is refused by default.
 
-The optional avatar preview requires `curl` and `chafa` in an interactive terminal. Only small HTTPS pictures are fetched. Without these tools, the profile picture URL is printed instead. `--no-avatar` suppresses the preview.
+Profile images recorded as `/ipfs/<cid>` (or `ipfs://<cid>`) are retrieved through the **same selected node API**, using `GET /ipfs/<cid>`, with a 2 MiB size limit. When running in an interactive terminal with optional `chafa` installed, the downloaded image is rendered in the terminal directly from memory (no `curl`, shell, or temporary files). Missing images or unsupported terminals fall back to the profile's picture reference; `--no-avatar` suppresses the preview. External avatar URLs are displayed as text and are not fetched automatically.
+
+Restored file sizes and the total transferred size use readable IEC units (`B`, `KiB`, `MiB`, `GiB`), including for `--dry-run`.
 
 Supported reconstruction strategies:
 
