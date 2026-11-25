@@ -19,6 +19,7 @@
 
 #include "AbstractCommand.hpp"
 #include "common/Hash.hpp"
+#include "common/HumanReadableSize.hpp"
 #include "common/Logger.hpp"
 #include "common/ThreadPool.hpp"
 #include "domain/Types.hpp"
@@ -286,6 +287,7 @@ namespace utx::app::use_case {
 
             size_t downloaded = 0;
             size_t failed = 0;
+            std::uint64_t restored_bytes = 0;
 
             for (const auto& target : ctx_.deploy_config.targets) {
                 const auto it = std::ranges::find_if(outcomes, [&](const auto& outcome) {
@@ -317,18 +319,19 @@ namespace utx::app::use_case {
                 }
 
                 if (dry_run) {
-                    LOG_THIS_INFO("{}🧪 Would restore {} ({} bytes){}",
+                    LOG_THIS_INFO("{}🧪 Would restore {} ({}){}",
                                   app_domain::color::yellow,
                                   target.path,
-                                  it->bytes,
+                                  utx::common::human_readable_bytes(it->bytes),
                                   app_domain::color::reset);
                 } else {
-                    LOG_THIS_INFO("{}✅ Downloaded {} ({} bytes){}",
+                    LOG_THIS_INFO("{}✅ Downloaded {} ({}){}",
                                   app_domain::color::green,
                                   target.path,
-                                  it->bytes,
+                                  utx::common::human_readable_bytes(it->bytes),
                                   app_domain::color::reset);
                 }
+                restored_bytes += it->bytes;
                 ++downloaded;
             }
 
@@ -350,11 +353,12 @@ namespace utx::app::use_case {
             const auto download_elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - download_started_at).count();
 
-            LOG_THIS_INFO("{}🎯 Download complete: {} file(s) {}, {} failed in {} ms.{}",
+            LOG_THIS_INFO("{}🎯 Download complete: {} file(s) {}, {} failed, {} total in {} ms.{}",
                           dry_run ? app_domain::color::yellow : app_domain::color::green,
                           downloaded,
                           dry_run ? "would be restored" : "restored",
                           failed,
+                          utx::common::human_readable_bytes(restored_bytes),
                           download_elapsed_ms,
                           app_domain::color::reset);
 
