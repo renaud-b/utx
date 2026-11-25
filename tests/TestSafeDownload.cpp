@@ -45,6 +45,58 @@ TEST_F(Temp, RejectsDuplicateAndAncestorDestinations) {
     EXPECT_TRUE(fs::is_empty(project()));
 }
 
+TEST_F(Temp, DryRunValidatesManifestWithoutRequiringFreshDestinations) {
+    fs::create_directories(project() / ".utx");
+    std::ofstream(project() / ".utx/config.json") << "{}";
+    std::ofstream(project() / ".utx.deploy.json") << "{}";
+    std::ofstream(project() / "existing.txt") << "original";
+
+    DeployConfig config{.targets = {{.path = "existing.txt", .chain = "chain"}}};
+    const auto result = validate_destinations(
+        project(), config, DestinationValidationMode::ManifestOnly);
+    EXPECT_TRUE(result.has_value()) << (result ? "" : result.error());
+
+    const auto normal = validate_destinations(project(), config);
+    ASSERT_FALSE(normal.has_value());
+    EXPECT_NE(normal.error().find(".utx.deploy.json"), std::string::npos);
+    EXPECT_EQ(fs::file_size(project() / "existing.txt"), 8);
+}
+
+TEST_F(Temp, DryRunStillRejectsUnsafeAndCollidingManifestPaths) {
+    DeployConfig config{.targets = {{.path = "../escape", .chain = "chain"}}};
+    EXPECT_FALSE(validate_destinations(
+        project(), config, DestinationValidationMode::ManifestOnly));
+    config.targets[0].path = "a";
+    config.targets.push_back({.path = "a/b", .chain = "other"});
+    EXPECT_FALSE(validate_destinations(
+        project(), config, DestinationValidationMode::ManifestOnly));
+    config.targets.pop_back();
+    config.targets[0].chain = "../invalid";
+    EXPECT_FALSE(validate_destinations(
+        project(), config, DestinationValidationMode::ManifestOnly));
+}
+
+TEST_F(Temp, ExistingDestinationErrorsIdentifyTheConflictingPath) {
+    std::ofstream(project() / "existing.txt") << "old";
+    DeployConfig config{.targets = {{.path = "existing.txt", .chain = "chain"}}};
+    const auto existing = validate_destinations(project(), config);
+    ASSERT_FALSE(existing.has_value());
+    EXPECT_NE(existing.error().find("existing.txt"), std::string::npos);
+
+    fs::create_directories(project() / "subdir");
+    std::ofstream(project() / "subdir" / "blocking") << "old";
+    config.targets[0].path = "subdir/blocking/child";
+    const auto parent = validate_destinations(project(), config);
+    ASSERT_FALSE(parent.has_value());
+    EXPECT_NE(parent.error().find("subdir/blocking"), std::string::npos);
+
+    fs::create_symlink(project() / "existing.txt", project() / "shortcut");
+    config.targets[0].path = "shortcut/child";
+    const auto link = validate_destinations(project(), config);
+    ASSERT_FALSE(link.has_value());
+    EXPECT_NE(link.error().find("shortcut"), std::string::npos);
+}
+
 TEST_F(Temp, RejectsExistingFilesAndDoesNotFollowSymlinks) {
     std::ofstream(root / "outside") << "original";
     fs::create_symlink(root / "outside", project() / "file");
