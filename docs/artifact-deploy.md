@@ -37,6 +37,7 @@ Base64 is only a JSON transport envelope, never on-chain file content.
   Real network finalization tests are still required.
 - Failed/partial publications stay staged for explicit retry; the node
   authoritative pending state selects the resume index.
-- utx download does not yet reconstruct opaque Artifact chains. Adding the
-  verified /render byte path to download should be a separate follow-up PR.
+- utx download reads the published descriptor and raw /render bytes, checks
+  SHA-256, size and the manifest synchronization hash, and fails if unavailable.
+  Requires the node Artifact renderer (node PR #271 and its dependencies).
 - Public routing and SPA fallback are separate capabilities.
