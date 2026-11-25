@@ -133,7 +133,11 @@ namespace utx::app::use_case {
                 LOG_THIS_ERROR("Invalid deploy manifest");
                 return 1;
             }
-            if (auto validation = infrastructure::download::validate_destinations(ctx_.root, deploy_config); !validation) {
+            const auto validation_mode = dry_run
+                ? infrastructure::download::DestinationValidationMode::ManifestOnly
+                : infrastructure::download::DestinationValidationMode::RequireNewFiles;
+            if (auto validation = infrastructure::download::validate_destinations(
+                    ctx_.root, deploy_config, validation_mode); !validation) {
                 LOG_THIS_ERROR("Download refused: {}", validation.error());
                 return 1;
             }
