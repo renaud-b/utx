@@ -25,7 +25,8 @@ This document is meant to be readable as a “real manual”, while staying fait
 13. Graph tools (`utx graph`)
 14. Chain tools (`utx chain`)
 15. Download from network (`utx download`)
-16. Practical workflows (examples)
+16. Inspect a chain (`utx inspect`)
+17. Practical workflows (examples)
 17. Troubleshooting and “why did this happen?”
 18. Security and determinism notes
 19. Glossary
@@ -504,18 +505,22 @@ Raw mode cannot create a chain; the target chain must already exist.
 This command bootstraps a local workspace from the deploy manifest chain.
 
 ```bash
-utx download <manifest_chain_id> [--api-target <host:port>] [--dry-run]
+utx download <manifest_chain_id> [--api-target <host:port>] [--dry-run] [--yes] [--no-avatar]
 ```
 
 What it does:
 
 - fetches the graph stored on the manifest chain,
 - reconstructs `.utx.deploy.json`,
+- shows the manifest chain height, projectors, owner addresses, and public owner profiles,
+- asks for explicit confirmation before downloading any target files (unless `--yes`),
 - fetches each target chain referenced by the manifest,
 - restores each local file from the graph state,
 - saves `.utx/config.json` with the manifest chain id.
 
-With `--dry-run`, `utx download` still fetches and decodes the manifest plus each target chain, but it does not write any local files or config.
+With `--dry-run`, `utx download` still fetches and decodes the manifest plus each target chain, but it does not write any local files or config. It prints the owner preview without prompting, and does not require an empty directory. Without `--yes`, a non-interactive download is refused by default.
+
+The optional avatar preview requires `curl` and `chafa` in an interactive terminal. Only small HTTPS pictures are fetched. Without these tools, the profile picture URL is printed instead. `--no-avatar` suppresses the preview.
 
 Supported reconstruction strategies:
 
@@ -531,7 +536,19 @@ If the local project is not initialized yet, `utx download` still works because 
 
 ---
 
-## 16. Practical workflows
+## 16. Inspect a chain (`utx inspect`)
+
+```bash
+utx inspect <chain_id> [--api-target <host:port>] [--no-avatar]
+```
+
+Reads the selected node\'s chain configuration, last block, and each owner\'s public identity state. Prints chain height (block count), projectors, optional labels, full owner addresses, and the available `user.pseudo`, `user.description`, and `user.picture` fields. Missing public profiles are reported without hiding addresses; an unreadable chain configuration is an error. No wallet, project initialization, or local writes are required.
+
+**Trust boundary:** owners come from the chain configuration, never from the downloaded manifest or self-declared profile properties. The selected node reports both chain metadata and profiles; the CLI does not independently verify consensus proofs. File chains referenced by a manifest may have different owners.
+
+---
+
+## 17. Practical workflows
 
 ### A. Create a project and deploy a web page
 
