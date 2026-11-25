@@ -26,6 +26,7 @@
 #include "infrastructure/deploy_config/DeployConfig.hpp"
 #include "infrastructure/download/SafeDownload.hpp"
 #include "infrastructure/download/ArtifactDownload.hpp"
+#include "infrastructure/download/PublisherIdentity.hpp"
 #include "infrastructure/languages/cpp/CppGenerator.hpp"
 #include "infrastructure/languages/css/CssGenerator.hpp"
 #include "infrastructure/languages/html/HtmlGenerator.hpp"
@@ -42,24 +43,27 @@ namespace utx::app::use_case {
     public:
         static constexpr size_t kMaxParallelDownloads = 8;
 
-        explicit DownloadCommand(infrastructure::context::AppContext ctx)
-            : ctx_(std::move(ctx)) {}
+        explicit DownloadCommand(infrastructure::context::AppContext ctx,
+                                 std::istream& input = std::cin, std::ostream& output = std::cout)
+            : ctx_(std::move(ctx)), input_(input), output_(output) {}
 
         [[nodiscard]]
         int execute(const std::vector<std::string>& args) override {
             if (args.size() < 3 || args[2] == "--help" || args[2] == "-h") {
                 LOG_THIS_INFO(
-                    "Usage: utx download <manifest_chain_id> [--api-target <host:port>] [--chain <id>] [--dry-run]");
+                    "Usage: utx download <manifest_chain_id> [--api-target <host:port>] [--chain <id>] [--dry-run] [--yes]");
                 LOG_THIS_INFO("  <manifest_chain_id>        : Chain that stores .utx.deploy.json.");
                 LOG_THIS_INFO("  --api-target <host:port>   : Override the network API target.");
                 LOG_THIS_INFO("  --chain <id>               : Alias for the manifest chain id.");
                 LOG_THIS_INFO("  --dry-run                  : Fetch and decode remote state without writing files.");
+                LOG_THIS_INFO("  --yes                      : Explicitly approve without prompting.");
                 return 1;
             }
 
             std::string manifest_chain_id;
             std::string api_target_override;
             bool dry_run = false;
+            bool yes = false;
 
             for (size_t i = 2; i < args.size(); ++i) {
                 const auto& arg = args[i];
@@ -75,8 +79,11 @@ namespace utx::app::use_case {
                     dry_run = true;
                     continue;
                 }
+                if (arg == "--yes") { yes = true; continue; }
+                if (arg == "--debug") continue;
                 if (arg.rfind("--", 0) == 0) {
-                    continue;
+                    LOG_THIS_ERROR("Unknown or incomplete download option");
+                    return 1;
                 }
                 if (manifest_chain_id.empty()) {
                     manifest_chain_id = arg;
@@ -117,7 +124,25 @@ namespace utx::app::use_case {
                               app_domain::color::reset);
             }
 
-            auto manifest_graph = ctx_.network_client.fetch_graph_state(manifest_chain_id);
+            namespace download = infrastructure::download;
+            const auto& endpoint = ctx_.network_client.target;
+            const auto owners = download::read_owners(endpoint, manifest_chain_id);
+            if (!owners) {
+                LOG_THIS_ERROR("Cannot establish manifest ownership: {}", owners.error());
+                return 1;
+            }
+            const auto pinned_graph = download::read_public_json(endpoint,
+                "/graph/" + manifest_chain_id + "?block_hash=" + owners->head_hash);
+            std::expected<graph::Graph, std::string> manifest_graph =
+                std::unexpected("Pinned manifest unavailable");
+            if (pinned_graph) {
+                try {
+                    if (pinned_graph->at("graph_id") == manifest_chain_id)
+                        manifest_graph = graph::Graph::from_raw_json(*pinned_graph);
+                } catch (const std::exception&) {
+                    // Do not fall back to an unpinned graph.
+                }
+            }
             if (!manifest_graph || !manifest_graph->root()) {
                 LOG_THIS_ERROR("{}❌ Could not fetch manifest graph: {}{}",
                                app_domain::color::red,
@@ -135,6 +160,35 @@ namespace utx::app::use_case {
             }
             if (auto validation = infrastructure::download::validate_destinations(ctx_.root, deploy_config); !validation) {
                 LOG_THIS_ERROR("Download refused: {}", validation.error());
+                return 1;
+            }
+
+            const auto after_read = download::read_owners(endpoint, manifest_chain_id);
+            if (!after_read || *after_read != *owners) {
+                LOG_THIS_ERROR("Manifest head or ownership changed; retry download");
+                return 1;
+            }
+            download::print_project_summary(output_, *owners, deploy_config);
+            for (const auto& owner : owners->owners) {
+                const auto profile = download::read_profile(endpoint, owner);
+                output_ << "\n  Address: " << owner << "\n";
+                if (profile) {
+                    output_ << "  Name: " << (profile->pseudo.empty() ?
+                        "No public name" : download::terminal_text(profile->pseudo, 120)) << "\n";
+                    if (!profile->description.empty())
+                        output_ << "  " << download::terminal_text(profile->description, 500) << "\n";
+                } else {
+                    output_ << "  Public profile unavailable\n";
+                }
+            }
+            output_ << "\nManifest ownership is not a safety review or proof of authorship of every file.\n";
+            if (!dry_run && !yes && !download::confirm_download(input_, output_)) {
+                output_ << "Download cancelled; no files written.\n";
+                return 0;
+            }
+            const auto confirmed = download::read_owners(endpoint, manifest_chain_id);
+            if (!confirmed || *confirmed != *owners) {
+                LOG_THIS_ERROR("Manifest changed before download; retry and review again");
                 return 1;
             }
 
@@ -264,7 +318,7 @@ namespace utx::app::use_case {
                 if (target.chain.empty()) {
                     LOG_THIS_WARN("{}⚠️ Skipping {} because it has no chain id.{}",
                                   app_domain::color::yellow,
-                                  target.path,
+                                  infrastructure::download::terminal_text(target.path, 4096),
                                   app_domain::color::reset);
                     ++failed;
                     continue;
@@ -273,7 +327,7 @@ namespace utx::app::use_case {
                 if (!it->error.empty()) {
                     LOG_THIS_ERROR("{}❌ Could not restore {} on chain {}: {}{}",
                                    app_domain::color::red,
-                                   target.path,
+                                   infrastructure::download::terminal_text(target.path, 4096),
                                    target.chain,
                                    it->error,
                                    app_domain::color::reset);
@@ -284,13 +338,13 @@ namespace utx::app::use_case {
                 if (dry_run) {
                     LOG_THIS_INFO("{}🧪 Would restore {} ({} bytes){}",
                                   app_domain::color::yellow,
-                                  target.path,
+                                  infrastructure::download::terminal_text(target.path, 4096),
                                   it->bytes,
                                   app_domain::color::reset);
                 } else {
                     LOG_THIS_INFO("{}✅ Downloaded {} ({} bytes){}",
                                   app_domain::color::green,
-                                  target.path,
+                                  infrastructure::download::terminal_text(target.path, 4096),
                                   it->bytes,
                                   app_domain::color::reset);
                 }
@@ -540,5 +594,7 @@ namespace utx::app::use_case {
         }
 
         infrastructure::context::AppContext ctx_;
+        std::istream& input_;
+        std::ostream& output_;
     };
 }
