@@ -42,13 +42,17 @@ TEST(ChainInspection, ReadsOwnersProjectorsHeightAndPublicProfiles) {
     TestNode node;
     node.server.Get("/chain/demo/config", [](const auto&, auto& res) {
         res.set_content(json{{"data", {
-            {"owners", json::array({kAlice, kBob})},
             {"projectors", json::array({"OwnerProjector", "GraphProjector"})},
             {"labels", json::array({"repository"})}
         }}}.dump(), "application/json");
     });
-    node.server.Get("/chain/demo/last", [](const auto&, auto& res) {
-        res.set_content(R"({"index":11})", "application/json");
+    node.server.Get("/chain/demo/owners", [](const auto&, auto& res) {
+        res.set_content(json{{"data", {
+            {"chain_id", "demo"},
+            {"height", 11},
+            {"head_hash", "abcd"},
+            {"owners", json::array({kAlice, kBob})}
+        }}}.dump(), "application/json");
     });
     node.server.Get(std::string("/chain/") + kAlice + "/state", [](const auto&, auto& res) {
         res.set_content(json{{"data", {
@@ -72,6 +76,7 @@ TEST(ChainInspection, ReadsOwnersProjectorsHeightAndPublicProfiles) {
     EXPECT_EQ(*result->height, 12U);
     EXPECT_EQ(result->projectors, (std::vector<std::string>{"OwnerProjector", "GraphProjector"}));
     EXPECT_EQ(result->labels, (std::vector<std::string>{"repository"}));
+    EXPECT_EQ(result->head_hash, "abcd");
     ASSERT_EQ(result->owners.size(), 2U);
     EXPECT_EQ(result->owners[0].address, kAlice);
     EXPECT_TRUE(result->owners[0].available);
@@ -89,14 +94,48 @@ TEST(ChainInspection, ReadsOwnersProjectorsHeightAndPublicProfiles) {
     EXPECT_NE(text.str().find("Profile     : unavailable"), std::string::npos);
 }
 
-TEST(ChainInspection, MalformedOrUnownedChainConfigIsRejected) {
-    EXPECT_FALSE(parse_chain_config(json{{"projectors", json::array()}}, "demo", "node"));
+TEST(ChainInspection, MalformedConfigurationAndOwnersAreRejected) {
+    EXPECT_FALSE(parse_chain_config(json::object(), "demo", "node"));
     EXPECT_FALSE(parse_chain_config(json{
-        {"owners", json::array()}, {"projectors", json::array()}
+        {"projectors", json::array()}
     }, "demo", "node"));
     EXPECT_FALSE(parse_chain_config(json{
-        {"owners", json::array({"not-an-address"})}, {"projectors", json::array()}
+        {"projectors", json::array({"OwnerProjector", "OwnerProjector"})}
     }, "demo", "node"));
+
+    auto info = parse_chain_config(json{
+        {"projectors", json::array({"OwnerProjector", "GraphProjector"})}
+    }, "demo", "node");
+    ASSERT_TRUE(info.has_value()) << info.error();
+    EXPECT_FALSE(populate_canonical_owners(*info, json{
+        {"chain_id", "wrong"}, {"height", 0}, {"owners", json::array({kAlice})}
+    }));
+    EXPECT_FALSE(populate_canonical_owners(*info, json{
+        {"chain_id", "demo"}, {"height", 0}, {"owners", json::array()}
+    }));
+    EXPECT_FALSE(populate_canonical_owners(*info, json{
+        {"chain_id", "demo"}, {"height", 0}, {"owners", json::array({"not-an-address"})}
+    }));
+    EXPECT_TRUE(info->owners.empty());
+
+    ASSERT_TRUE(populate_canonical_owners(*info, json{
+        {"chain_id", "demo"}, {"height", 0}, {"owners", json::array({kBob})}
+    }));
+    EXPECT_EQ(info->height, 1U);
+    ASSERT_EQ(info->owners.size(), 1U);
+    EXPECT_EQ(info->owners[0].address, kBob);
+}
+
+TEST(ChainInspection, MissingCanonicalOwnershipFailsClosed) {
+    TestNode node;
+    node.server.Get("/chain/demo/config", [](const auto&, auto& res) {
+        res.set_content(R"({"projectors":["OwnerProjector","GraphProjector"]})",
+                        "application/json");
+    });
+    node.start();
+    const auto result = fetch_chain_info(node.endpoint(), "demo");
+    ASSERT_FALSE(result.has_value());
+    EXPECT_NE(result.error().find("current chain owners"), std::string::npos);
 }
 
 TEST(ChainInspection, AmbiguousProfilesCannotOverwriteChainOwnership) {
