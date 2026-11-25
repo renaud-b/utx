@@ -86,6 +86,7 @@ if (BUILD_TESTING)
 
     add_executable(utx_tests
             tests/TestArtifactDeploy.cpp
+            tests/TestSafeDownload.cpp
             tests/TestDeployClient.cpp
             tests/TestDeployCommand.cpp
             tests/TestStaging.cpp

@@ -12,6 +12,7 @@
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -23,6 +24,8 @@
 #include "domain/Types.hpp"
 #include "infrastructure/context/AppContext.hpp"
 #include "infrastructure/deploy_config/DeployConfig.hpp"
+#include "infrastructure/download/SafeDownload.hpp"
+#include "infrastructure/download/ArtifactDownload.hpp"
 #include "infrastructure/languages/cpp/CppGenerator.hpp"
 #include "infrastructure/languages/css/CssGenerator.hpp"
 #include "infrastructure/languages/html/HtmlGenerator.hpp"
@@ -89,6 +92,11 @@ namespace utx::app::use_case {
                 return 1;
             }
 
+            if (!infrastructure::download::safe_chain_id(manifest_chain_id)) {
+                LOG_THIS_ERROR("Invalid manifest chain ID");
+                return 1;
+            }
+
             if (!api_target_override.empty()) {
                 ctx_.network_client.target = api_target_override;
                 ctx_.project_config.api_target = api_target_override;
@@ -110,26 +118,24 @@ namespace utx::app::use_case {
             }
 
             auto manifest_graph = ctx_.network_client.fetch_graph_state(manifest_chain_id);
-            if (!manifest_graph) {
+            if (!manifest_graph || !manifest_graph->root()) {
                 LOG_THIS_ERROR("{}❌ Could not fetch manifest graph: {}{}",
                                app_domain::color::red,
-                               manifest_graph.error(),
+                               manifest_graph ? "Missing manifest root" : manifest_graph.error(),
                                app_domain::color::reset);
                 return 1;
             }
 
-            const auto deploy_config = reconstruct_deploy_config(*manifest_graph->root());
-
-            if (!dry_run) {
-                if (auto res = infrastructure::deploy::DeployConfigManager::save_deploy_config_atomic(
-                        ctx_.root, deploy_config); !res) {
-                    LOG_THIS_ERROR("{}❌ Could not write {}: {}{}",
-                                   app_domain::color::red,
-                                   infrastructure::deploy::kDeployFile,
-                                   res.error(),
-                                   app_domain::color::reset);
-                    return 1;
-                }
+            app_domain::DeployConfig deploy_config;
+            try {
+                deploy_config = reconstruct_deploy_config(*manifest_graph->root());
+            } catch (const std::exception&) {
+                LOG_THIS_ERROR("Invalid deploy manifest");
+                return 1;
+            }
+            if (auto validation = infrastructure::download::validate_destinations(ctx_.root, deploy_config); !validation) {
+                LOG_THIS_ERROR("Download refused: {}", validation.error());
+                return 1;
             }
 
             ctx_.deploy_config = deploy_config;
@@ -144,28 +150,6 @@ namespace utx::app::use_case {
 
             std::vector<DownloadOutcome> outcomes(ctx_.deploy_config.targets.size());
             std::atomic<std::size_t> completed{0};
-
-            if (!dry_run) {
-                for (const auto& target : ctx_.deploy_config.targets) {
-                    if (target.path.empty()) {
-                        continue;
-                    }
-
-                    const auto out_path = ctx_.root / target.path;
-                    const auto parent = out_path.parent_path();
-                    if (!parent.empty()) {
-                        std::error_code ec;
-                        fs::create_directories(parent, ec);
-                        if (ec) {
-                            LOG_THIS_ERROR("{}❌ Could not create parent directories for {}: {}{}",
-                                           app_domain::color::red,
-                                           target.path,
-                                           ec.message(),
-                                           app_domain::color::reset);
-                        }
-                    }
-                }
-            }
 
             const std::size_t worker_count = std::max<std::size_t>(
                 1,
@@ -218,32 +202,35 @@ namespace utx::app::use_case {
                         return;
                     }
 
-                    infrastructure::chain::NetworkClient local_client{ctx_.network_client.target};
-                    auto file_graph = local_client.fetch_graph_state(target.chain);
-                    if (!file_graph || !file_graph->root()) {
-                        outcome.error = file_graph ? "missing graph root" : file_graph.error();
-                        ++completed;
-                        return;
-                    }
-
-                    const auto content = render_target(file_graph->root(), target.kind);
-                    outcome.bytes = content.size();
-
-                    if (!dry_run) {
-                        const auto out_path = ctx_.root / target.path;
-                        std::ofstream out(out_path, std::ios::trunc);
-                        if (!out) {
-                            outcome.error = "could not open output file";
-                            ++completed;
-                            return;
+                    try {
+                        std::string content;
+                        if (target.kind == app_domain::TargetKind::Artifact) {
+                            auto bytes = infrastructure::download::fetch_artifact(
+                                ctx_.network_client.target, target.chain, target.last_synced_hash);
+                            if (!bytes) {
+                                outcome.error = bytes.error();
+                                ++completed;
+                                return;
+                            }
+                            content = std::move(*bytes);
+                        } else {
+                            infrastructure::chain::NetworkClient local_client{ctx_.network_client.target};
+                            auto file_graph = local_client.fetch_graph_state(target.chain);
+                            if (!file_graph || !file_graph->root()) {
+                                outcome.error = file_graph ? "missing graph root" : file_graph.error();
+                                ++completed;
+                                return;
+                            }
+                            content = render_target(file_graph->root(), target.kind);
                         }
-
-                        out << content;
-                        if (!out) {
-                            outcome.error = "failed to write output file";
-                            ++completed;
-                            return;
+                        outcome.bytes = content.size();
+                        if (!dry_run) {
+                            if (auto result = infrastructure::download::write_new_file(
+                                    ctx_.root, target.path, content); !result)
+                                outcome.error = result.error();
                         }
+                    } catch (const std::exception&) {
+                        outcome.error = "Failed to reconstruct target";
                     }
                     ++completed;
                 }));
@@ -310,8 +297,19 @@ namespace utx::app::use_case {
                 ++downloaded;
             }
 
-            if (!dry_run) {
-                ctx_.save_local_config();
+            if (!dry_run && failed == 0) {
+                const auto manifest = json(ctx_.deploy_config).dump(4);
+                const auto local = json(ctx_.project_config).dump(4);
+                if (auto result = infrastructure::download::write_new_file(
+                        ctx_.root, ".utx.deploy.json", manifest); !result) {
+                    LOG_THIS_ERROR("Cannot save manifest: {}", result.error());
+                    return 1;
+                }
+                if (auto result = infrastructure::download::write_new_file(
+                        ctx_.root, ".utx/config.json", local); !result) {
+                    LOG_THIS_ERROR("Cannot save local configuration: {}", result.error());
+                    return 1;
+                }
             }
 
             const auto download_elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -450,7 +448,11 @@ namespace utx::app::use_case {
                 target.chain = chain->get_property("value");
             }
             if (const auto kind = find_child_named(node, "kind")) {
-                target.kind = app_domain::parse_kind(kind->get_property("value")).value_or(app_domain::TargetKind::Graph);
+                const auto parsed = app_domain::parse_kind(kind->get_property("value"));
+                if (!parsed) throw std::runtime_error("Unknown target kind");
+                target.kind = *parsed;
+            } else {
+                throw std::runtime_error("Missing target kind");
             }
             if (const auto last_synced_hash = find_child_named(node, "last_synced_hash")) {
                 target.last_synced_hash = last_synced_hash->get_property("value");
@@ -475,12 +477,15 @@ namespace utx::app::use_case {
                 }
             }
 
+            if (config.version != 1) throw std::runtime_error("Unsupported manifest version");
             if (const auto targets = find_child_named(root, "targets")) {
                 for (const auto& target_node : ordered_children(*targets)) {
                     if (target_node) {
                         config.targets.push_back(reconstruct_target(*target_node));
                     }
                 }
+            } else {
+                throw std::runtime_error("Missing manifest targets");
             }
 
             return config;
@@ -525,6 +530,8 @@ namespace utx::app::use_case {
                 }
                 case app_domain::TargetKind::Json:
                     return graph_element_to_json(*root).dump(4);
+                case app_domain::TargetKind::Artifact:
+                    throw std::runtime_error("Artifact requires byte download");
                 case app_domain::TargetKind::Graph:
                 case app_domain::TargetKind::Identity:
                 default:
