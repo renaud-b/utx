@@ -9,6 +9,8 @@ set(CMAKE_CXX_EXTENSIONS ON)
 
 include(FetchContent)
 find_package(OpenSSL 3.0 REQUIRED)
+# Optional native terminal profile previews; text-only otherwise.
+find_package(PNG QUIET)
 find_library(SODIUM_LIB sodium REQUIRED)
 
 
@@ -71,6 +73,10 @@ target_link_libraries(utx
         ${SODIUM_LIB}
 )
 
+if (PNG_FOUND)
+    target_link_libraries(utx PRIVATE PNG::PNG)
+    target_compile_definitions(utx PRIVATE UTX_HAS_PNG)
+endif()
 
 include(CTest)
 
@@ -114,6 +120,11 @@ if (BUILD_TESTING)
             ${SODIUM_LIB}
             GTest::gtest_main
                         )
+
+    if (PNG_FOUND)
+        target_link_libraries(utx_tests PRIVATE PNG::PNG)
+        target_compile_definitions(utx_tests PRIVATE UTX_HAS_PNG)
+    endif()
 
     include(GoogleTest)
     gtest_discover_tests(utx_tests)

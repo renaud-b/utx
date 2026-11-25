@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include <httplib.h>
 #include "infrastructure/download/PublisherIdentity.hpp"
+#include "infrastructure/download/TerminalAvatar.hpp"
 #include "use_case/DownloadCommand.hpp"
 
 namespace {
@@ -24,6 +25,32 @@ TEST(PublisherIdentity, SanitizesTerminalEscapesAndPreservesUtf8) {
     EXPECT_EQ(safe.find("\xe2\x80\xae"), std::string::npos);
     EXPECT_NE(safe.find("caf\xc3\xa9"), std::string::npos);
     EXPECT_EQ(terminal_text("abcdef", 3), "abc...");
+}
+
+TEST(PublisherIdentity, AvatarOnlyUsesPublicCidAndBoundedPngDecoder) {
+    EXPECT_TRUE(public_picture_path("/ipfs/Qm123456789"));
+    EXPECT_FALSE(public_picture_path("https://evil.test/avatar.png"));
+    EXPECT_FALSE(public_picture_path("/ipfs/../escape"));
+    EXPECT_FALSE(public_picture_path("/ipfs/Qm123456789?x=1"));
+    EXPECT_FALSE(png_terminal_preview("not an image"));
+#ifdef UTX_HAS_PNG
+    png_image image{};
+    image.version = PNG_IMAGE_VERSION;
+    image.width = 1;
+    image.height = 1;
+    image.format = PNG_FORMAT_RGBA;
+    const unsigned char pixel[] = {255, 0, 0, 255};
+    png_alloc_size_t size = 0;
+    ASSERT_TRUE(png_image_write_to_memory(&image, nullptr, &size, 0, pixel, 0, nullptr));
+    std::string bytes(size, '\0');
+    ASSERT_TRUE(png_image_write_to_memory(&image, bytes.data(), &size, 0, pixel, 0, nullptr));
+    bytes.resize(size);
+    const auto preview = png_terminal_preview(bytes);
+    ASSERT_TRUE(preview.has_value());
+    EXPECT_NE(preview->find("\033[38;2;255;0;0m"), std::string::npos);
+    EXPECT_NE(preview->find("\xe2\x96\x80"), std::string::npos);
+    png_image_free(&image);
+#endif
 }
 
 TEST(PublisherIdentity, DefaultNoAndExplicitYes) {

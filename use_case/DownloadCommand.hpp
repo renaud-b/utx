@@ -27,6 +27,7 @@
 #include "infrastructure/download/SafeDownload.hpp"
 #include "infrastructure/download/ArtifactDownload.hpp"
 #include "infrastructure/download/PublisherIdentity.hpp"
+#include "infrastructure/download/TerminalAvatar.hpp"
 #include "infrastructure/languages/cpp/CppGenerator.hpp"
 #include "infrastructure/languages/css/CssGenerator.hpp"
 #include "infrastructure/languages/html/HtmlGenerator.hpp"
@@ -51,12 +52,13 @@ namespace utx::app::use_case {
         int execute(const std::vector<std::string>& args) override {
             if (args.size() < 3 || args[2] == "--help" || args[2] == "-h") {
                 LOG_THIS_INFO(
-                    "Usage: utx download <manifest_chain_id> [--api-target <host:port>] [--chain <id>] [--dry-run] [--yes]");
+                    "Usage: utx download <manifest_chain_id> [--api-target <host:port>] [--chain <id>] [--dry-run] [--yes] [--avatar-gateway <host:port>]");
                 LOG_THIS_INFO("  <manifest_chain_id>        : Chain that stores .utx.deploy.json.");
                 LOG_THIS_INFO("  --api-target <host:port>   : Override the network API target.");
                 LOG_THIS_INFO("  --chain <id>               : Alias for the manifest chain id.");
                 LOG_THIS_INFO("  --dry-run                  : Fetch and decode remote state without writing files.");
                 LOG_THIS_INFO("  --yes                      : Explicitly approve without prompting.");
+                LOG_THIS_INFO("  --avatar-gateway <host:port>: Optional public IPFS gateway for PNG previews.");
                 return 1;
             }
 
@@ -64,6 +66,7 @@ namespace utx::app::use_case {
             std::string api_target_override;
             bool dry_run = false;
             bool yes = false;
+            std::string avatar_gateway;
 
             for (size_t i = 2; i < args.size(); ++i) {
                 const auto& arg = args[i];
@@ -80,6 +83,9 @@ namespace utx::app::use_case {
                     continue;
                 }
                 if (arg == "--yes") { yes = true; continue; }
+                if (arg == "--avatar-gateway" && i + 1 < args.size()) {
+                    avatar_gateway = args[++i]; continue;
+                }
                 if (arg == "--debug") continue;
                 if (arg.rfind("--", 0) == 0) {
                     LOG_THIS_ERROR("Unknown or incomplete download option");
@@ -177,6 +183,11 @@ namespace utx::app::use_case {
                         "No public name" : download::terminal_text(profile->pseudo, 120)) << "\n";
                     if (!profile->description.empty())
                         output_ << "  " << download::terminal_text(profile->description, 500) << "\n";
+                    if (&output_ == &std::cout && !dry_run && !yes) {
+                        const auto preview = download::fetch_avatar_preview(
+                            avatar_gateway.empty() ? endpoint : avatar_gateway, profile->picture);
+                        if (preview) output_ << *preview;
+                    }
                 } else {
                     output_ << "  Public profile unavailable\n";
                 }
