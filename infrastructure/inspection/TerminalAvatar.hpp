@@ -1,80 +1,118 @@
 #pragma once
 
 #include <cerrno>
+#include <cstddef>
 #include <cstdlib>
-#include <iostream>
+#include <expected>
+#include <optional>
 #include <string>
 #include <string_view>
+
+#include <httplib.h>
+
+#include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <fcntl.h>
 
 namespace utx::app::infrastructure::inspection {
 
-// chafa and curl are optional. Do not invoke a shell with profile-controlled URLs.
-// Only fetch small HTTPS images, and only for an interactive terminal.
-inline bool safe_avatar_url(std::string_view url) {
-    if (!url.starts_with("https://") || url.size() > 2048) return false;
-    for (const unsigned char c : url) {
-        if (c <= 32 || c >= 127) return false;
+// Wallet profile pictures are stored as /ipfs/<cid>. Accept the equivalent
+// ipfs:// form and bare CIDs, but never follow arbitrary profile-supplied URLs.
+inline std::optional<std::string> picture_cid(std::string_view picture) {
+    if (picture.starts_with("/ipfs/")) {
+        picture.remove_prefix(6);
+    } else if (picture.starts_with("ipfs://")) {
+        picture.remove_prefix(7);
     }
-    return true;
+
+    if (picture.empty() || picture.size() > 128) return std::nullopt;
+    for (const unsigned char c : picture) {
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9'))) {
+            return std::nullopt;
+        }
+    }
+    return std::string(picture);
 }
 
-inline void preview_avatar(std::string_view picture) {
-    if (!::isatty(STDOUT_FILENO) || !safe_avatar_url(picture)) return;
-    if (const char* term = std::getenv("TERM"); !term || std::string_view(term) == "dumb") return;
+// Read the image from the same node API selected for chain inspection.
+// The response is capped in memory and never creates a local file.
+inline std::expected<std::string, std::string> fetch_ipfs_avatar(
+    const std::string& endpoint, std::string_view picture) {
+    constexpr std::size_t kMaxAvatarBytes = 2 * 1024 * 1024;
+    const auto cid = picture_cid(picture);
+    if (!cid) return std::unexpected("Picture has no usable IPFS CID");
 
-    const std::string url(picture);
-    int pipe_fds[2];
-    if (::pipe(pipe_fds) != 0) return;
+    httplib::Client client(endpoint);
+    client.set_connection_timeout(3);
+    client.set_read_timeout(5);
+    client.set_follow_location(false);
 
-    std::cout.flush();
-    const pid_t downloader = ::fork();
-    if (downloader == 0) {
-        ::dup2(pipe_fds[1], STDOUT_FILENO);
-        ::close(pipe_fds[0]);
-        ::close(pipe_fds[1]);
-        const int devnull = ::open("/dev/null", O_WRONLY);
-        if (devnull >= 0) {
-            ::dup2(devnull, STDERR_FILENO);
-            ::close(devnull);
-        }
-        ::execlp("curl", "curl", "--fail", "--silent", "--location",
-                 "--proto", "=https", "--proto-redir", "=https",
-                 "--connect-timeout", "3", "--max-time", "5",
-                 "--max-filesize", "524288", "--", url.c_str(),
-                 static_cast<char*>(nullptr));
-        ::_exit(127);
-    }
-    if (downloader < 0) {
-        ::close(pipe_fds[0]);
-        ::close(pipe_fds[1]);
-        return;
-    }
+    std::string bytes;
+    const auto response = client.Get("/ipfs/" + *cid,
+        [&](const char* chunk, std::size_t length) {
+            if (length > kMaxAvatarBytes - bytes.size()) return false;
+            bytes.append(chunk, length);
+            return true;
+        });
 
-    const pid_t renderer = ::fork();
-    if (renderer == 0) {
-        ::dup2(pipe_fds[0], STDIN_FILENO);
-        ::close(pipe_fds[0]);
-        ::close(pipe_fds[1]);
-        const int devnull = ::open("/dev/null", O_WRONLY);
-        if (devnull >= 0) {
-            ::dup2(devnull, STDERR_FILENO);
-            ::close(devnull);
-        }
-        ::execlp("chafa", "chafa", "--format", "symbols", "--size", "16x8",
+    if (!response || response->status != 200 || bytes.empty())
+        return std::unexpected("IPFS avatar unavailable or larger than 2 MiB");
+    return bytes;
+}
+
+// Pipe untrusted image bytes to the optional chafa renderer. A socketpair with
+// MSG_NOSIGNAL avoids SIGPIPE if chafa is not installed or exits prematurely.
+// The decoder runs in a child process; no shell, temporary file, or curl.
+inline bool render_avatar(std::string_view bytes) {
+    if (!::isatty(STDOUT_FILENO) || bytes.empty()) return false;
+    if (const char* term = std::getenv("TERM"); !term || std::string_view(term) == "dumb")
+        return false;
+
+    int sockets[2];
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) != 0) return false;
+
+    const pid_t child = ::fork();
+    if (child == 0) {
+        ::close(sockets[0]);
+        if (::dup2(sockets[1], STDIN_FILENO) < 0) ::_exit(127);
+        ::close(sockets[1]);
+        ::alarm(5);
+        ::execlp("chafa", "chafa", "--format", "symbols", "--size", "20x10",
                  "-", static_cast<char*>(nullptr));
         ::_exit(127);
     }
-    ::close(pipe_fds[0]);
-    ::close(pipe_fds[1]);
-    int status = 0;
-    while (::waitpid(downloader, &status, 0) < 0 && errno == EINTR) {}
-    if (renderer > 0) {
-        while (::waitpid(renderer, &status, 0) < 0 && errno == EINTR) {}
+
+    ::close(sockets[1]);
+    if (child < 0) {
+        ::close(sockets[0]);
+        return false;
     }
+
+    // Never block indefinitely if an image decoder stalls.
+    timeval timeout{.tv_sec = 5, .tv_usec = 0};
+    ::setsockopt(sockets[0], SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+
+    std::size_t sent = 0;
+    while (sent < bytes.size()) {
+        const auto n = ::send(sockets[0], bytes.data() + sent, bytes.size() - sent, MSG_NOSIGNAL);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) break;
+        sent += static_cast<std::size_t>(n);
+    }
+    ::shutdown(sockets[0], SHUT_WR);
+    ::close(sockets[0]);
+
+    int status = 0;
+    while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {}
+    return sent == bytes.size() && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+inline bool preview_avatar(const std::string& endpoint, std::string_view picture) {
+    if (!::isatty(STDOUT_FILENO)) return false;
+    const auto bytes = fetch_ipfs_avatar(endpoint, picture);
+    return bytes && render_avatar(*bytes);
 }
 
 } // namespace utx::app::infrastructure::inspection
