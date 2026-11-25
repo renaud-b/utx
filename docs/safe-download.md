@@ -28,3 +28,9 @@ file chains are still read at their current state, not pinned by the manifest.
 Default [y/N]; EOF or any other answer cancels without writes. --yes explicitly
 approves; --dry-run does not write or prompt. Old nodes without /owners fail closed.
 No wallet or code execution. Remote profile strings are sanitized for terminal output.
+
+PNG profile thumbnails are optional at build time (libpng). On a TrueColor TTY,
+only /ipfs/<cid> references are fetched from the selected API target or explicit
+--avatar-gateway. Unsupported images, unavailable gateways, NO_COLOR and
+non-TTY output fall back to text. No arbitrary profile-controlled external URL
+is contacted, and no temporary image file is written.
