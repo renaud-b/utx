@@ -27,9 +27,9 @@ This document is meant to be readable as a “real manual”, while staying fait
 15. Download from network (`utx download`)
 16. Inspect a chain (`utx inspect`)
 17. Practical workflows (examples)
-17. Troubleshooting and “why did this happen?”
-18. Security and determinism notes
-19. Glossary
+18. Troubleshooting and “why did this happen?”
+19. Security and determinism notes
+20. Glossary
 
 ---
 
@@ -512,7 +512,7 @@ What it does:
 
 - fetches the graph stored on the manifest chain,
 - reconstructs `.utx.deploy.json`,
-- shows the manifest chain height, projectors, owner addresses, and public owner profiles,
+- shows the manifest chain height, projectors, current OwnerProjector addresses, and public owner profiles,
 - asks for explicit confirmation before downloading any target files (unless `--yes`),
 - fetches each target chain referenced by the manifest,
 - restores each local file from the graph state,
@@ -542,9 +542,9 @@ If the local project is not initialized yet, `utx download` still works because 
 utx inspect <chain_id> [--api-target <host:port>] [--no-avatar]
 ```
 
-Reads the selected node\'s chain configuration, last block, and each owner\'s public identity state. Prints chain height (block count), projectors, optional labels, full owner addresses, and the available `user.pseudo`, `user.description`, and `user.picture` fields. Missing public profiles are reported without hiding addresses; an unreadable chain configuration is an error. No wallet, project initialization, or local writes are required.
+Reads the selected node's chain configuration, public current-owner view, and each owner's public identity state. Prints chain height (block count), projectors, optional labels, full owner addresses, and the available `user.pseudo`, `user.description`, and `user.picture` fields. Missing public profiles are reported without hiding addresses; an unreadable chain configuration is an error. No wallet, project initialization, or local writes are required.
 
-**Trust boundary:** owners come from the chain configuration, never from the downloaded manifest or self-declared profile properties. The selected node reports both chain metadata and profiles; the CLI does not independently verify consensus proofs. File chains referenced by a manifest may have different owners.
+**Trust boundary:** the current owners come from the node's canonical OwnerProjector view (`GET /chain/{id}/owners`), not from the genesis chain configuration, downloaded manifest, or self-declared profile properties. The configuration identifies the projectors; it does not store owner authority. The CLI does not independently verify consensus proofs. File chains referenced by a manifest may have different owners.
 
 ---
 
@@ -595,7 +595,7 @@ utx deploy "major refactor" --force-snapshot
 
 ---
 
-## 17. Troubleshooting and “why did this happen?”
+## 18. Troubleshooting and “why did this happen?”
 
 ### “Why does `status` say CLEAN but the network is different?”
 
@@ -616,7 +616,7 @@ Parsing and graph diffing are node responsibilities. Typical causes include pars
 Run `utx deploy` again after fixing the reported error. Targets that already reached `Finalized` have their `last_synced_hash` updated locally and are removed from staging; failed paths remain staged and are replanned against current network state.
 
 ---
-## 18. Security and determinism notes
+## 19. Security and determinism notes
 
 - Nodes are responsible for deterministic parsing, graph diffing and action/snapshot planning.
 - `utx` signs the transactions produced by the node plan using the active wallet. Keep wallet files safe.
@@ -626,7 +626,7 @@ A key philosophical point: the system guarantees deterministic replay, not canon
 
 ---
 
-## 19. Glossary
+## 20. Glossary
 
 **Target**: an entry in `.utx.deploy.json` representing one deployable artifact.  
 **Kind**: a parser/projector family (html/js/css/markdown/cpp/graph/identity).  
