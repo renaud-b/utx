@@ -171,6 +171,12 @@ TEST(ChainInspection, TerminalOutputStripsControlCharactersFromPublicProfile) {
 }
 
 TEST(ChainInspection, ConsentIsExplicitAndFailClosed) {
+    std::istringstream unavailable;
+    std::ostringstream silent;
+    EXPECT_TRUE(download_approved(true, false, unavailable, silent));
+    EXPECT_TRUE(download_approved(false, true, unavailable, silent));
+    EXPECT_FALSE(download_approved(false, false, unavailable, silent));
+    EXPECT_EQ(silent.str().find("[y/N]"), silent.str().npos);
     for (const std::string answer : {"y\n", "YES\n", " yes \n"}) {
         std::istringstream in(answer);
         std::ostringstream out;
