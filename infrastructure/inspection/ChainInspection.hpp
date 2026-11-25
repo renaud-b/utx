@@ -91,7 +91,9 @@ inline std::expected<void, std::string> populate_canonical_owners(
     ChainInfo& info, const nlohmann::json& view) {
     if (!view.is_object() || json_text(view, "chain_id") != info.chain_id ||
         !view.contains("owners") || !view.at("owners").is_array() ||
-        !view.contains("height") || !view.at("height").is_number_unsigned()) {
+        !view.contains("height") || !view.at("height").is_number_integer() ||
+        (!view.at("height").is_number_unsigned() &&
+         view.at("height").get<std::int64_t>() < 0)) {
         return std::unexpected("Invalid canonical owner view");
     }
     const auto last_index = view.at("height").get<std::uint64_t>();
