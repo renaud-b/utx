@@ -1,4 +1,5 @@
 #include <chrono>
+#include <atomic>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -8,6 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include "infrastructure/inspection/ChainInspection.hpp"
+#include "common/HumanReadableSize.hpp"
 
 namespace {
 using namespace utx::app::infrastructure::inspection;
@@ -62,7 +64,7 @@ TEST(ChainInspection, ReadsOwnersProjectorsHeightAndPublicProfiles) {
                 {{"graph_data", {{"root", {
                     {"user.pseudo", "Alice"},
                     {"user.description", "Building distributed things"},
-                    {"user.picture", "https://example.com/avatar.png"},
+                    {"user.picture", "/ipfs/QmAvatarFixture123"},
                     {"owners", json::array({kBob})}
                 }}}}}
             })}
@@ -81,7 +83,7 @@ TEST(ChainInspection, ReadsOwnersProjectorsHeightAndPublicProfiles) {
     EXPECT_EQ(result->owners[0].address, kAlice);
     EXPECT_TRUE(result->owners[0].available);
     EXPECT_EQ(result->owners[0].pseudo, "Alice");
-    EXPECT_EQ(result->owners[0].picture, "https://example.com/avatar.png");
+    EXPECT_EQ(result->owners[0].picture, "/ipfs/QmAvatarFixture123");
     EXPECT_EQ(result->owners[1].address, kBob);
     EXPECT_FALSE(result->owners[1].available);
 
@@ -165,9 +167,58 @@ TEST(ChainInspection, TerminalOutputStripsControlCharactersFromPublicProfile) {
     print_chain_info(info, output);
     EXPECT_EQ(output.str().find('\x1b'), std::string::npos);
     EXPECT_NE(output.str().find("Hello world"), std::string::npos);
-    EXPECT_FALSE(safe_avatar_url("http://example.com/avatar.png"));
-    EXPECT_FALSE(safe_avatar_url("https://example.com/avatar\n.png"));
-    EXPECT_TRUE(safe_avatar_url("https://example.com/avatar.png"));
+    EXPECT_FALSE(picture_cid("http://example.com/avatar.png"));
+    EXPECT_FALSE(picture_cid("/ipfs/Qmabc/other"));
+    EXPECT_FALSE(picture_cid("/ipfs/Qmabc?size=large"));
+    EXPECT_FALSE(picture_cid("/ipfs/Qmabc%2fother"));
+    EXPECT_EQ(picture_cid("/ipfs/Qmabc"), std::optional<std::string>("Qmabc"));
+    EXPECT_EQ(picture_cid("ipfs://bafy123"), std::optional<std::string>("bafy123"));
+    EXPECT_EQ(picture_cid("bafy123"), std::optional<std::string>("bafy123"));
+}
+
+TEST(ChainInspection, DownloadsAvatarFromSelectedNodeIpfsEndpoint) {
+    TestNode node;
+    constexpr const char* cid = "QmAvatarPictureFixture123";
+    const std::string expected{static_cast<char>(0x89), 'P', 'N', 'G', '\0', 'x'};
+    std::atomic<int> requests{0};
+    node.server.Get(std::string("/ipfs/") + cid, [&](const auto&, auto& res) {
+        ++requests;
+        res.set_content(expected, "image/png");
+    });
+    node.start();
+
+    const auto fetched = fetch_ipfs_avatar(node.endpoint(), std::string("/ipfs/") + cid);
+    ASSERT_TRUE(fetched.has_value()) << fetched.error();
+    EXPECT_EQ(*fetched, expected);
+    EXPECT_EQ(requests.load(), 1);
+}
+
+TEST(ChainInspection, AvatarNetworkErrorsAndSizeLimitAreNonFatal) {
+    TestNode node;
+    std::atomic<int> requests{0};
+    node.server.Get("/ipfs/QmOversize", [&](const auto&, auto& res) {
+        ++requests;
+        res.set_content(std::string(2 * 1024 * 1024 + 1, 'x'), "image/png");
+    });
+    node.start();
+
+    EXPECT_FALSE(fetch_ipfs_avatar(node.endpoint(), "/ipfs/../escape"));
+    EXPECT_FALSE(fetch_ipfs_avatar(node.endpoint(), "https://example.com/avatar.png"));
+    EXPECT_EQ(requests.load(), 0);
+    EXPECT_FALSE(fetch_ipfs_avatar(node.endpoint(), "/ipfs/QmMissing"));
+    EXPECT_FALSE(fetch_ipfs_avatar(node.endpoint(), "/ipfs/QmOversize"));
+    EXPECT_EQ(requests.load(), 1);
+}
+
+TEST(ChainInspection, FileSizesAreHumanReadable) {
+    using utx::common::human_readable_bytes;
+    EXPECT_EQ(human_readable_bytes(0), "0 B");
+    EXPECT_EQ(human_readable_bytes(1), "1 B");
+    EXPECT_EQ(human_readable_bytes(1023), "1023 B");
+    EXPECT_EQ(human_readable_bytes(1024), "1.0 KiB");
+    EXPECT_EQ(human_readable_bytes(1536), "1.5 KiB");
+    EXPECT_EQ(human_readable_bytes(1024 * 1024), "1.0 MiB");
+    EXPECT_EQ(human_readable_bytes(5ULL * 1024 * 1024 * 1024), "5.0 GiB");
 }
 
 TEST(ChainInspection, ConsentIsExplicitAndFailClosed) {
