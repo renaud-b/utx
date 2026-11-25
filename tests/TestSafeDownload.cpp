@@ -58,7 +58,7 @@ TEST_F(Temp, DryRunValidatesManifestWithoutRequiringFreshDestinations) {
 
     const auto normal = validate_destinations(project(), config);
     ASSERT_FALSE(normal.has_value());
-    EXPECT_NE(normal.error().find(".utx.deploy.json"), std::string::npos);
+    EXPECT_NE(normal.error().find("Destination already exists:"), std::string::npos);
     EXPECT_EQ(fs::file_size(project() / "existing.txt"), 8);
 }
 
