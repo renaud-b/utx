@@ -17,3 +17,14 @@ whole-directory install; retry in a clean directory. The local destination is
 assumed not to be concurrently renamed by a hostile local process. Linux/POSIX
 exclusive open protects against links and overwrites, not arbitrary local attackers.
 No downloaded code is executed.
+
+## Publisher preview
+
+Download obtains the manifest's public owner observation, reads the manifest
+at that head hash, rechecks the observation, and presents every owner address
+and available profile. A changed manifest aborts before writes. This is
+node-reported ownership, not independent finality or a safety review. Referenced
+file chains are still read at their current state, not pinned by the manifest.
+Default [y/N]; EOF or any other answer cancels without writes. --yes explicitly
+approves; --dry-run does not write or prompt. Old nodes without /owners fail closed.
+No wallet or code execution. Remote profile strings are sanitized for terminal output.
